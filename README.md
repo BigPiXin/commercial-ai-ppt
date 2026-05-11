@@ -98,4 +98,4 @@ The final response should include the project directory, generated image folders
 
 ## License
 
-No license file is included yet. Choose and add a license before formal public open-source distribution.
+MIT License. See [LICENSE](LICENSE).
