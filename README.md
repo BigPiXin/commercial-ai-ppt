@@ -17,6 +17,14 @@ This repository is intentionally small. `SKILL.md` is the primary instruction fi
 
 The core design is: AI handles narrative, layout intent, and optional image generation; scripts handle repeatable file upload, OCR-assisted text extraction, layout reconstruction, and PPTX assembly.
 
+## Approval Gate Contract
+
+This skill is intentionally gate-driven:
+
+- Phase 1 is planning only. It may draft the chapter structure and full slide copy, but it must not generate images before the user approves the copy/framework.
+- Phase 2 starts after plan approval. It generates or imports text-overlaid slide images, saves them locally under `ppt/`, validates them, and then asks the user to approve the images. Saving is mandatory; the agent should not ask whether to save generated images.
+- Phase 3 starts after image approval. It generates or imports no-text backgrounds and rebuilds the editable PPTX as one continuous phase. The agent should not ask the user to choose separately between background generation and PPT packaging unless an input or credential is missing.
+
 ## Repository Layout
 
 ```text
@@ -56,6 +64,9 @@ Phase 3 is editable reconstruction. After image approval, the AI generates no-te
 ## Important Guardrails
 
 - Never skip user approval between phases.
+- Never generate slide images during Phase 1 before the user approves the slide framework and copy.
+- Never ask whether generated Phase 2 images should be saved; save and validate them automatically before image review.
+- After image approval, treat clean-background generation plus editable PPTX reconstruction as one Phase 3 workflow.
 - Never invent product facts, model names, customer claims, roadmap dates, or technical parameters.
 - Preserve the deck language. Chinese source content defaults to Simplified Chinese unless the user says otherwise.
 - Do not translate visible slide text into English just because the prompt template is written in English.
@@ -66,7 +77,7 @@ Phase 3 is editable reconstruction. After image approval, the AI generates no-te
 - Do not require Evolink for local image import or reconstruction. Use Evolink Files only when a remote image model needs temporary model-facing URLs.
 - Treat remote image result URLs as temporary. Download generated slides to local `ppt/` immediately and use local files as the Phase 3 source of truth.
 - Persist usable remote URL metadata in `remote_assets.json` and `MANIFEST.md`; Phase 3 may reuse cached URLs while they are unexpired and validated, then refresh them from local files when needed.
-- Use failure-aware downloads and image validation; unchecked `curl -sL` is not enough because 404/403 responses must stop the workflow.
+- Use failure-aware downloads and image validation; unchecked `curl -sL` / `curl -s -o` is not enough because 404/403 responses must stop the workflow. For Evolink result URLs, use `curl -fL --retry 3 --retry-delay 2 --connect-timeout 15 --max-time 180 -A "Mozilla/5.0" ...` or equivalent checked code.
 - Always report resolved absolute output paths. Do not only say `~/Desktop/...`, `./ppt-projects/...`, `/ppt`, or `/ppt-clean`, because those paths may refer to the runtime workspace rather than the user's physical desktop.
 - Keep generated project outputs outside this repository unless the user explicitly asks to commit examples.
 

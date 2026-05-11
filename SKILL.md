@@ -11,11 +11,53 @@ This skill turns user-provided solution content, product materials, documents, i
 
 Never skip the approval gates.
 
-1. Phase 1 produces the PPT narrative, outline, and final slide-by-slide copy. Stop and ask the user to approve.
-2. Phase 2 creates the local project folder, saves the approved plan as Markdown when available, then either generates text-overlaid slide images or imports user-supplied slide images into `/ppt`. Stop and ask the user to approve the images unless they explicitly already approved them.
-3. Phase 3 generates or imports no-text backgrounds, then rebuilds the editable PPT with the existing image-to-PPT script. Notify the user when complete.
+1. Phase 1 produces only the PPT narrative, outline, and final slide-by-slide copy. Stop and ask the user to approve the copy/framework. Do not create folders, do not call image models, and do not generate slide images in Phase 1.
+2. Phase 2 starts only after explicit Phase 1 approval, or when the user supplies already-approved slide images. Create the local project folder, save the approved plan as Markdown when available, then either generate text-overlaid slide images or import user-supplied slide images into `/ppt`. All Phase 2 images must be saved locally automatically; never ask whether they should be saved. Stop and ask the user to approve the images unless they explicitly already approved them.
+3. Phase 3 starts only after explicit image approval. It is one continuous production phase: generate or import no-text backgrounds, then rebuild the editable PPT with the existing image-to-PPT script. Do not split this into separate user choices unless required inputs are missing or a failure occurs. Notify the user when complete.
 
 If the user asks to "continue" after a gate, resume from the next phase. If required inputs are missing, ask only for the missing content or file path. Do not require Evolink or any image provider for local image import; require provider credentials only when a remote generation, editing, upload, or clean-background model call is actually needed.
+
+## Phase Gate State Machine
+
+Treat the workflow as a strict state machine. When uncertain, choose the safer earlier gate and ask for approval.
+
+Allowed transitions:
+
+- `draft_plan` -> `awaiting_plan_approval`: after Phase 1 copy/framework is presented.
+- `awaiting_plan_approval` -> `phase2_images`: only after the user clearly approves the Phase 1 plan, for example "确认", "继续生成图片", "可以进入图片生成".
+- `phase2_images` -> `awaiting_image_approval`: after all text-overlaid slide images are generated/imported, saved to `/ppt`, validated, and reported.
+- `awaiting_image_approval` -> `phase3_ppt`: only after the user clearly approves the images, for example "图片可以", "确认这些图", "继续生成 PPT".
+- `phase3_ppt` -> `done`: after clean backgrounds and editable PPTX are both complete.
+
+Forbidden transitions:
+
+- Do not go from Phase 1 directly to image generation.
+- Do not generate, edit, or upload images before Phase 1 approval.
+- Do not ask the user whether to save generated images; saving is mandatory in Phase 2.
+- Do not ask the user to choose between "generate backgrounds" and "package PPTX" after image approval; Phase 3 includes both steps.
+- Do not present Phase 2/3 as optional menu choices unless the user is explicitly asking for a mode change.
+
+Bad guidance to avoid:
+
+```text
+是否需要我保存这些图到本地？
+是否需要我生成无文字背景图？
+是否需要我直接打包成 PPTX？
+```
+
+Correct gate guidance:
+
+```text
+请确认这份章节与逐页文案是否可以进入图片生成阶段。你确认后，我会创建项目目录，逐页生成 PNG，并自动保存到本地。
+```
+
+After Phase 2:
+
+```text
+所有带文字版图片已保存到：
+<absolute_project_path>/ppt
+请审查页面视觉、文案、产品图和顺序；你确认图片可行后，我会继续生成无文字底图并重建可编辑 PPT。
+```
 
 ## Entry Modes
 
@@ -67,11 +109,10 @@ Resolve the project directory in this order:
 4. User home fallback: `~/Desktop/ppt-projects/<project-id>/` if Desktop exists.
 5. Final fallback: `~/ppt-projects/<project-id>/`.
 
-For this user's current Mac only, if the existing local convention exists, it may be used as a user-specific override, not as a portable default:
-
-```text
-/Users/huxin/Desktop/test/template/<project-id>/
-```
+Use a machine-specific directory only when the user explicitly provides that path
+in the current task or when it is configured through one of the output-root
+environment variables above. Do not bake personal workstation paths into prompts,
+project templates, or reusable skill instructions.
 
 When running on Windows, use `Path.home()` or the chosen workspace root instead of Unix paths. Examples: `C:\Users\<name>\Desktop\ppt-projects\<project-id>` or `.\ppt-projects\<project-id>`.
 
@@ -121,6 +162,8 @@ If user-supplied images are imported, `MANIFEST.md` must record `slide_image_sou
 
 Goal: turn user material into a reviewed commercial presentation plan.
 
+Phase 1 is a planning-only phase. It must not call image generation, upload files to image providers, download generated image results, create `/ppt` images, or create no-text backgrounds. The only acceptable file action before approval is preparing or saving draft planning text if the runtime already has a safe project path; otherwise keep the plan in the response and wait.
+
 Steps:
 
 1. Read the user's material and extract facts, product relationships, audience needs, and missing data.
@@ -132,7 +175,7 @@ Steps:
 Approval wording:
 
 ```text
-请确认这份章节与页面文案是否可以进入图片生成阶段。你确认后，我再创建项目目录并开始逐页生成 PNG。
+请确认这份章节与页面文案是否可以进入图片生成阶段。你确认后，我会创建项目目录，逐页生成 PNG，并自动保存到本地。
 ```
 
 Phase 1 output should include:
@@ -147,6 +190,8 @@ Phase 1 output should include:
 
 Enter Phase 2 after explicit Phase 1 approval, or immediately when the user supplies existing slide images and asks to import, continue, or rebuild from them.
 
+Phase 2 output is not a preview-only conversation artifact. Every generated or imported text-overlaid slide image must be written into the local project `/ppt` folder before asking the user to review. Do not ask "whether to save"; save first, validate, then ask whether the saved images are approved for Phase 3.
+
 Steps:
 
 1. Create the output directory structure.
@@ -157,6 +202,8 @@ Steps:
 6. Update `MANIFEST.md` after every imported or generated image.
 7. Stop and ask the user to review the images before Phase 3, unless they explicitly said the supplied images are already approved.
 
+If image generation completes but local saving fails, Phase 2 is not complete. Stop, report the failing page and path, and do not ask for image approval until the local files are present and validated.
+
 Remote generation persistence rules:
 
 - Remote generation result URLs are temporary transport links, not durable source files.
@@ -166,7 +213,9 @@ Remote generation persistence rules:
 - The remote URL is a valid reusable model-facing reference while it is inside its provider retention window and passes validation. For Evolink Files this is normally 72 hours.
 - The local `/ppt` image remains the durable source of truth; the saved URL is a cached transport reference, not the only copy.
 - If a generated result URL returns 404/403 or downloads invalid content, stop and report the failed page instead of continuing with missing local images.
-- Do not use unchecked `curl -sL` downloads. Use a failure-aware download such as `curl -fL --retry 3 -o <file> <url>` or equivalent code that checks HTTP status, file size, and image validity.
+- Do not use unchecked `curl -sL` or `curl -s -o` downloads. For Evolink `files.evolink.ai` result URLs, prefer:
+  `curl -fL --retry 3 --retry-delay 2 --connect-timeout 15 --max-time 180 -A "Mozilla/5.0" -o "<local_png>" "<url>"`
+  Then verify HTTP success, non-zero file size, and image validity before continuing.
 
 Minimum `remote_assets.json` shape:
 
@@ -294,6 +343,8 @@ If images were supplied by the user:
 ## Phase 3: Clean Backgrounds And Editable PPT
 
 Enter Phase 3 only after explicit user approval of `/ppt` images, unless the user supplied those images and explicitly said they should be treated as final/approved.
+
+Phase 3 is a chained execution phase. Once the user approves the `/ppt` images, generate/import all clean backgrounds and then run editable PPT reconstruction in the same phase. Ask for additional confirmation only if inputs are missing, provider credentials/quota fail, page counts mismatch, or the user explicitly asks to pause.
 
 Before Phase 3 model calls:
 
