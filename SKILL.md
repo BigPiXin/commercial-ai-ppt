@@ -1,6 +1,6 @@
 ---
 name: commercial-ai-ppt
-description: "Use when the user asks to create, generate, write, design, or rebuild a commercial PowerPoint deck, proposal deck, solution presentation, pitch deck, slide images, no-text backgrounds, or editable PPT from text, documents, images, or product materials. This skill runs a gated AI-driven PPT workflow: content planning and user approval, image generation and user approval, then clean backgrounds plus editable PPT reconstruction."
+description: "Use when the user asks to create, generate, write, design, import, or rebuild a commercial PowerPoint deck, proposal deck, solution presentation, pitch deck, slide images, no-text backgrounds, or editable PPT from text, documents, images, or product materials. This skill supports both automated image generation and bring-your-own-image workflows, then rebuilds editable PPT output through clean backgrounds and text-layer reconstruction."
 ---
 
 # Commercial AI PPT Production
@@ -12,21 +12,34 @@ This skill turns user-provided solution content, product materials, documents, i
 Never skip the approval gates.
 
 1. Phase 1 produces the PPT narrative, outline, and final slide-by-slide copy. Stop and ask the user to approve.
-2. Phase 2 creates the local project folder, saves the approved plan as Markdown, generates text-overlaid slide images with `image2`, and saves every PNG locally. Stop and ask the user to approve the images.
-3. Phase 3 generates no-text backgrounds, then rebuilds the editable PPT with the existing image-to-PPT script. Notify the user when complete.
+2. Phase 2 creates the local project folder, saves the approved plan as Markdown when available, then either generates text-overlaid slide images or imports user-supplied slide images into `/ppt`. Stop and ask the user to approve the images unless they explicitly already approved them.
+3. Phase 3 generates or imports no-text backgrounds, then rebuilds the editable PPT with the existing image-to-PPT script. Notify the user when complete.
 
-If the user asks to "continue" after a gate, resume from the next phase. If required inputs are missing, ask only for the missing content or file path.
+If the user asks to "continue" after a gate, resume from the next phase. If required inputs are missing, ask only for the missing content or file path. Do not require Evolink or any image provider for local image import; require provider credentials only when a remote generation, editing, upload, or clean-background model call is actually needed.
+
+## Entry Modes
+
+Choose the lightest mode that matches the user's actual inputs.
+
+- Full production mode: use when the user provides source content and wants this skill to plan copy, generate slide images, generate clean backgrounds, and rebuild PPTX.
+- Bring-your-own-slide-images mode: use when the user already has text-overlaid slide images from GPT image tools, Midjourney, Banana, other image models, designers, or manual work. Skip automated slide-image generation, create the project folder, copy/import those images into `/ppt`, record their source, and continue from image review or Phase 3.
+- Bring-your-own-backgrounds mode: use when the user provides both text-overlaid slide images and matching clean no-text backgrounds. Skip image generation and clean-background generation, verify image counts and ordering, then run editable PPT reconstruction.
+- Reconstruction-only mode: use when the user only wants an editable PPT from existing images. Do not force Phase 1 planning; ask only for missing image paths, page order, deck language if unknown, and whether the current images should be treated as approved.
+
+External image tools are first-class inputs. Images made through direct GPT chat, image2, Banana, Midjourney, designers, or other systems are valid as long as they are accessible as local files or downloadable URLs.
 
 ## Required Inputs
 
-Ask the user for source material before Phase 1 if it is not already available:
+Ask the user for source material before Phase 1 if Phase 1 is needed and the material is not already available:
 
 - Business goal, audience, scenario, and expected deck length.
 - Source content: pasted text, Markdown, Word/PDF/PPTX, product specs, brand assets, screenshots, or reference images.
+- Existing slide images: local paths, directories, zip archives, or URLs if the user already generated or designed the PPT images elsewhere.
+- Optional matching clean backgrounds if the user already has no-text versions.
 - Visual direction: style, brand colors, examples, taboos, logo/product usage constraints.
 - Output preference: default is 16:9 PNG images plus editable PPTX.
 
-Do not invent product facts, model names, parameters, roadmap dates, or customer claims. Mark missing facts as `待补充` or ask the user.
+Do not invent product facts, model names, parameters, roadmap dates, or customer claims. Mark missing facts as `待补充` or ask the user. If the user supplies final slide images and only wants reconstruction, do not require the original source text.
 
 ## Language And Copy Fidelity
 
@@ -62,12 +75,13 @@ For this user's current Mac only, if the existing local convention exists, it ma
 
 When running on Windows, use `Path.home()` or the chosen workspace root instead of Unix paths. Examples: `C:\Users\<name>\Desktop\ppt-projects\<project-id>` or `.\ppt-projects\<project-id>`.
 
-Create this structure before Phase 2 generation:
+Create this structure before Phase 2 generation or image import:
 
 ```text
 <project>/
   source/
     approved_plan.md
+    imported_assets.md
   ppt/
     01_cover.png
     02_xxx.png
@@ -87,6 +101,7 @@ Create this structure before Phase 2 generation:
 Write progress into `MANIFEST.md` as each page completes. Report progress to the user page by page; do not leave long tasks silent.
 
 `MANIFEST.md` must record the resolved project directory, operating system, image model, resolution, and whether public asset publishing was used.
+If user-supplied images are imported, `MANIFEST.md` must record `slide_image_source: user_supplied` and the original paths or URLs without secrets.
 
 ## Phase 1: Content And Chapter Planning
 
@@ -114,20 +129,29 @@ Phase 1 output should include:
 - Visual style brief.
 - Known gaps or assumptions.
 
-## Phase 2: Text Slide Image Generation
+## Phase 2: Slide Image Acquisition
 
-Enter Phase 2 only after explicit user approval.
+Enter Phase 2 after explicit Phase 1 approval, or immediately when the user supplies existing slide images and asks to import, continue, or rebuild from them.
 
 Steps:
 
 1. Create the output directory structure.
-2. Save Phase 1 content to `source/approved_plan.md`.
-3. Read `references/prompt-pack.md` for image prompt templates.
-4. Build one `image2` prompt per slide and save all prompts to `prompts/image_prompts.md`.
-5. Generate each text-overlaid slide image with `image2`.
-6. Save each output as PNG in `/ppt`, using two-digit page order.
-7. Update `MANIFEST.md` after every saved image.
-8. Stop and ask the user to review the images before Phase 3.
+2. Save Phase 1 content to `source/approved_plan.md` when Phase 1 exists.
+3. If the user supplied slide images, import them instead of generating new images.
+4. If the user wants the skill to generate images, read `references/prompt-pack.md`, build one prompt per slide, save all prompts to `prompts/image_prompts.md`, and call the configured image model.
+5. Save every text-overlaid slide image as PNG in `/ppt`, using two-digit page order.
+6. Update `MANIFEST.md` after every imported or generated image.
+7. Stop and ask the user to review the images before Phase 3, unless they explicitly said the supplied images are already approved.
+
+User-supplied image import rules:
+
+- Accept local image files, folders, zip archives, and downloadable HTTP(S) URLs.
+- Supported formats: PNG, JPG/JPEG, and WebP. Convert to PNG when practical; otherwise preserve source format only if downstream scripts support it.
+- Sort by natural filename order unless the user provides an explicit page order.
+- Copy images into `/ppt`; do not modify originals in place.
+- Save source mapping to `source/imported_assets.md`.
+- If page order, missing pages, or duplicate versions are ambiguous, ask the user before continuing.
+- Do not call Evolink, image2, or any remote image model just to import already-available slide images.
 
 Image generation defaults:
 
@@ -143,21 +167,23 @@ Reference image rule:
 - If the image model/API needs a URL for a local reference image, upload the local image through Evolink Files first and pass the returned `data.file_url`.
 - Use Evolink Files for model-facing image URLs. If the user separately wants long-term publishing, finish this PPT workflow first and use a separate publishing workflow.
 - Do not pass private local file paths to remote image APIs unless the tool explicitly uploads them.
+- This rule applies only when a remote image API needs a URL. It does not apply when the user supplied final slide images for local reconstruction.
 
 ## Environment And Credential Preflight
 
 Before Phase 2 image generation or Phase 3 clean-background generation:
 
-- Check that the selected image model route is configured.
+- Check that the selected image model route is configured only if a model call is needed.
 - If using Evolink upload or Evolink `gpt-image-2`, require `EVOLINK_API_KEY` or `EVOLINK_API_TOKEN` in the environment or an equivalent configured secret.
 - If a key, login, subscription, quota, or model access is missing, stop and tell the user exactly what is missing.
+- If the user supplied both `/ppt` images and matching `/ppt-clean` backgrounds, no image-provider credential is required for reconstruction.
 - Never print, save, echo, or write API keys/tokens into prompts, Markdown files, `MANIFEST.md`, logs, URLs, or screenshots.
 - Do not silently switch providers after authentication or quota failures. Ask the user before switching.
 - Record only non-secret status in `MANIFEST.md`, such as `evolink_upload: available` or `image_provider: missing_key`.
 
 ## Evolink File Upload Bridge
 
-Use Evolink Files as the preferred temporary public URL bridge for local reference images. This avoids repository authentication, repository permissions, and raw URL issues.
+Use Evolink Files as the preferred temporary public URL bridge for local reference images when a remote image API requires image URLs. This avoids repository authentication, repository permissions, and raw URL issues. Do not use this bridge for purely local image import or reconstruction.
 
 Official endpoints:
 
@@ -208,26 +234,33 @@ Phase 2 review wording:
 所有带文字版图片已落盘到 /ppt。请先审查页面视觉、文案、产品图和顺序；你确认图片可行后，我再生成无文字底图并重建可编辑 PPT。
 ```
 
+If images were supplied by the user:
+
+```text
+我已把你提供的图片按页面顺序导入到 /ppt。请确认这些图片是否就是最终带文字版页面；你确认后，我再继续生成无文字底图并重建可编辑 PPT。
+```
+
 ## Phase 3: Clean Backgrounds And Editable PPT
 
-Enter Phase 3 only after explicit user approval of `/ppt` images.
+Enter Phase 3 only after explicit user approval of `/ppt` images, unless the user supplied those images and explicitly said they should be treated as final/approved.
 
 Steps:
 
-1. Read `references/prompt-pack.md` and use the strict no-text prompt.
-2. Generate one clean no-text background for every `/ppt/*.png`.
-3. Save each clean image as `/ppt-clean/<same-stem>_clean.png`.
-4. Verify `/ppt` and `/ppt-clean` have the same page count and matching stems.
-5. Locate the bundled editable PPT script inside this skill:
+1. If the user supplied matching clean no-text backgrounds, import them into `/ppt-clean` and skip clean-background generation.
+2. Otherwise, read `references/prompt-pack.md` and use the strict no-text prompt.
+3. Generate one clean no-text background for every `/ppt/*.png`.
+4. Save each clean image as `/ppt-clean/<same-stem>_clean.png`.
+5. Verify `/ppt` and `/ppt-clean` have the same page count and matching stems.
+6. Locate the bundled editable PPT script inside this skill:
 
 ```text
 commercial-ai-ppt/scripts/build_editable_ppt_vision.py
 ```
 
-6. Run the bundled script; do not write a replacement python-pptx implementation from scratch.
-7. Use cross-platform OCR defaults: Apple Vision on macOS, RapidOCR on Windows/Linux, Tesseract or precomputed JSON only as fallback.
-8. If a multimodal style pass is needed, create `style_overrides.json` and rerun the script with `--style-overrides`.
-9. Validate the PPTX and report final paths.
+7. Run the bundled script; do not write a replacement python-pptx implementation from scratch.
+8. Use cross-platform OCR defaults: Apple Vision on macOS, RapidOCR on Windows/Linux, Tesseract or precomputed JSON only as fallback.
+9. If a multimodal style pass is needed, create `style_overrides.json` and rerun the script with `--style-overrides`.
+10. Validate the PPTX and report final paths.
 
 Recommended command:
 

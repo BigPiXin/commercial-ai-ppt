@@ -1,8 +1,8 @@
 # Prompt Pack
 
-Use this file only when entering Phase 2 or Phase 3 of `commercial-ai-ppt`.
+Use this file only when entering Phase 2 or Phase 3 of `commercial-ai-ppt` and a model call is actually needed. Do not load this file for pure local image import or reconstruction from already-supplied slide images/backgrounds.
 
-## Phase 2 Image Prompt Template
+## Phase 2 Image Generation Prompt Template
 
 Create one prompt per slide. Keep product facts and page copy exactly aligned with `source/approved_plan.md`.
 

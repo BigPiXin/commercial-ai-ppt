@@ -10,12 +10,12 @@ This repository is intentionally small. `SKILL.md` is the primary instruction fi
 
 1. Plan the deck from the user's source material.
 2. Ask the user to approve the chapter structure and full slide copy.
-3. Generate text-overlaid slide images and save them locally.
-4. Ask the user to approve the generated images.
-5. Generate no-text slide backgrounds.
+3. Generate text-overlaid slide images, or import slide images the user made elsewhere.
+4. Ask the user to approve the generated or imported images.
+5. Generate no-text slide backgrounds, or import clean backgrounds the user already has.
 6. Rebuild an editable `.pptx` with clean backgrounds plus editable text layers.
 
-The core design is: AI handles narrative, layout intent, and image generation; scripts handle repeatable file upload, OCR-assisted text extraction, layout reconstruction, and PPTX assembly.
+The core design is: AI handles narrative, layout intent, and optional image generation; scripts handle repeatable file upload, OCR-assisted text extraction, layout reconstruction, and PPTX assembly.
 
 ## Repository Layout
 
@@ -33,9 +33,9 @@ commercial-ai-ppt/
 
 ## How AI Agents Should Use It
 
-When the user asks to create, generate, design, rebuild, or convert a commercial PPT, load `SKILL.md` first and follow it as the top-level controller. Do not skip approval gates.
+When the user asks to create, generate, design, rebuild, import, or convert a commercial PPT, load `SKILL.md` first and follow it as the top-level controller. Do not skip approval gates, but do choose the shortest valid entry mode when the user already has slide images.
 
-Only load `references/prompt-pack.md` when entering image generation or clean-background generation. Do not copy the full prompt pack into every turn unless the current phase needs it.
+Only load `references/prompt-pack.md` when entering image generation or model-driven clean-background generation. Do not copy the full prompt pack into every turn unless the current phase needs a model prompt.
 
 Use the bundled scripts instead of rewriting equivalent logic:
 
@@ -47,9 +47,9 @@ Use the bundled scripts instead of rewriting equivalent logic:
 
 Phase 1 is content planning. The AI reads the user's materials, extracts facts, drafts a slide-by-slide structure, writes the actual page copy, locks the deck language, and asks for user approval.
 
-Phase 2 is visual generation. After approval, the AI creates the project directory, saves `source/approved_plan.md`, builds one image prompt per slide, calls the configured image model, saves PNGs under `ppt/`, updates `MANIFEST.md`, and asks the user to review the images.
+Phase 2 is slide image acquisition. After Phase 1 approval, or immediately when the user already has slide images, the AI creates the project directory and either generates slide images through the configured image model or imports user-supplied images made with GPT image tools, image2, Banana, Midjourney, designers, or other workflows. All accepted slide images are saved under `ppt/`, recorded in `MANIFEST.md`, and reviewed before reconstruction.
 
-Phase 3 is editable reconstruction. After image approval, the AI generates no-text backgrounds under `ppt-clean/`, then runs `build_editable_ppt_vision.py` to create an editable PPTX under `ppt-editable/`.
+Phase 3 is editable reconstruction. After image approval, the AI generates no-text backgrounds under `ppt-clean/`, or imports matching user-supplied clean backgrounds, then runs `build_editable_ppt_vision.py` to create an editable PPTX under `ppt-editable/`.
 
 ## Important Guardrails
 
@@ -57,10 +57,11 @@ Phase 3 is editable reconstruction. After image approval, the AI generates no-te
 - Never invent product facts, model names, customer claims, roadmap dates, or technical parameters.
 - Preserve the deck language. Chinese source content defaults to Simplified Chinese unless the user says otherwise.
 - Do not translate visible slide text into English just because the prompt template is written in English.
+- Treat user-supplied slide images as first-class inputs; do not force image generation when images already exist.
 - Use 16:9, 2K, medium quality, and `n=1` by default for image generation.
 - Never use 4K unless the user explicitly asks.
 - Never print, save, log, or commit API keys.
-- Do not use GitHub or public raw URLs as the default image bridge. Use Evolink Files for temporary model-facing URLs.
+- Do not require Evolink for local image import or reconstruction. Use Evolink Files only when a remote image model needs temporary model-facing URLs.
 - Keep generated project outputs outside this repository unless the user explicitly asks to commit examples.
 
 ## Expected Runtime Inputs
@@ -79,6 +80,8 @@ PPT_OUTPUT_ROOT
 
 If an image provider key, upload key, quota, or model access is missing, stop and tell the user what is missing instead of silently switching providers.
 
+No image-provider credential is required when the user supplies both text-overlaid slide images and matching clean no-text backgrounds for local reconstruction.
+
 ## Output Contract
 
 A completed run should produce a project folder like:
@@ -86,6 +89,7 @@ A completed run should produce a project folder like:
 ```text
 <project>/
   source/approved_plan.md
+  source/imported_assets.md
   ppt/
   ppt-clean/
   ppt-editable/
