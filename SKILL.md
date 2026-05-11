@@ -75,6 +75,19 @@ For this user's current Mac only, if the existing local convention exists, it ma
 
 When running on Windows, use `Path.home()` or the chosen workspace root instead of Unix paths. Examples: `C:\Users\<name>\Desktop\ppt-projects\<project-id>` or `.\ppt-projects\<project-id>`.
 
+## Path Reporting
+
+Always report resolved paths, not just shorthand paths.
+
+Rules:
+
+- Resolve the project directory to an absolute path before creating files. In Python, use `Path(...).expanduser().resolve()`.
+- Do not tell the user only `~/Desktop/...`, `./ppt-projects/...`, `/ppt`, or `/ppt-clean`; these are ambiguous across local machines, containers, sandboxes, SSH hosts, and project workspaces.
+- Whenever reporting saved files, include the absolute project directory and absolute artifact folders.
+- If a shorthand path is useful, show it only after the absolute path, for example: `/workspace/home/Desktop/ppt-projects/demo` (`~/Desktop/ppt-projects/demo` inside the runtime environment).
+- If the runtime environment may not be the user's physical desktop, explicitly say that the path is inside the current runtime/workspace environment.
+- `MANIFEST.md` must include `project_dir_abs`, `runtime_home_abs`, and the absolute paths for `ppt_dir`, `ppt_clean_dir`, and `ppt_editable_dir`.
+
 Create this structure before Phase 2 generation or image import:
 
 ```text
@@ -100,7 +113,7 @@ Create this structure before Phase 2 generation or image import:
 
 Write progress into `MANIFEST.md` as each page completes. Report progress to the user page by page; do not leave long tasks silent.
 
-`MANIFEST.md` must record the resolved project directory, operating system, image model, resolution, and whether public asset publishing was used.
+`MANIFEST.md` must record the resolved absolute project directory, operating system, image model, resolution, and whether public asset publishing was used.
 If user-supplied images are imported, `MANIFEST.md` must record `slide_image_source: user_supplied` and the original paths or URLs without secrets.
 
 ## Phase 1: Content And Chapter Planning
@@ -231,13 +244,17 @@ Long-term sharing or repository publication is outside this PPT production workf
 Phase 2 review wording:
 
 ```text
-所有带文字版图片已落盘到 /ppt。请先审查页面视觉、文案、产品图和顺序；你确认图片可行后，我再生成无文字底图并重建可编辑 PPT。
+所有带文字版图片已落盘到：
+<absolute_project_path>/ppt
+请先审查页面视觉、文案、产品图和顺序；你确认图片可行后，我再生成无文字底图并重建可编辑 PPT。
 ```
 
 If images were supplied by the user:
 
 ```text
-我已把你提供的图片按页面顺序导入到 /ppt。请确认这些图片是否就是最终带文字版页面；你确认后，我再继续生成无文字底图并重建可编辑 PPT。
+我已把你提供的图片按页面顺序导入到：
+<absolute_project_path>/ppt
+请确认这些图片是否就是最终带文字版页面；你确认后，我再继续生成无文字底图并重建可编辑 PPT。
 ```
 
 ## Phase 3: Clean Backgrounds And Editable PPT
@@ -333,6 +350,6 @@ Before declaring completion:
 Final response should be concise and include:
 
 - Project directory.
-- `/ppt`, `/ppt-clean`, and final PPTX paths.
+- Absolute `/ppt`, `/ppt-clean`, and final PPTX paths.
 - Validation status.
 - Any known limitations or pages that need user review.

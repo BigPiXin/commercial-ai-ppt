@@ -62,6 +62,7 @@ Phase 3 is editable reconstruction. After image approval, the AI generates no-te
 - Never use 4K unless the user explicitly asks.
 - Never print, save, log, or commit API keys.
 - Do not require Evolink for local image import or reconstruction. Use Evolink Files only when a remote image model needs temporary model-facing URLs.
+- Always report resolved absolute output paths. Do not only say `~/Desktop/...`, `./ppt-projects/...`, `/ppt`, or `/ppt-clean`, because those paths may refer to the runtime workspace rather than the user's physical desktop.
 - Keep generated project outputs outside this repository unless the user explicitly asks to commit examples.
 
 ## Expected Runtime Inputs
@@ -98,7 +99,7 @@ A completed run should produce a project folder like:
   MANIFEST.md
 ```
 
-The final response should include the project directory, generated image folders, final PPTX path, validation status, and any known limitations.
+`MANIFEST.md` and the final response should include resolved absolute paths for the project directory, generated image folders, final PPTX path, validation status, and any known limitations.
 
 ## License
 
