@@ -43,6 +43,8 @@ Use the bundled scripts instead of rewriting equivalent logic:
 - `scripts/build_editable_ppt_vision.py` rebuilds editable PowerPoint files from text-overlaid images and clean backgrounds.
 - `scripts/vision_ocr.swift` provides an Apple Vision OCR backend for macOS.
 
+Never replace `build_editable_ppt_vision.py` with an ad-hoc `python-pptx` fallback. If the script is not found, resolve the skill path or stop with a clear missing-script error.
+
 ## Core Workflow
 
 Phase 1 is content planning. The AI reads the user's materials, extracts facts, drafts a slide-by-slide structure, writes the actual page copy, locks the deck language, and asks for user approval.
@@ -62,6 +64,8 @@ Phase 3 is editable reconstruction. After image approval, the AI generates no-te
 - Never use 4K unless the user explicitly asks.
 - Never print, save, log, or commit API keys.
 - Do not require Evolink for local image import or reconstruction. Use Evolink Files only when a remote image model needs temporary model-facing URLs.
+- Treat remote image result URLs as temporary. Download generated slides to local `ppt/` immediately and use local files as the Phase 3 source of truth.
+- Use failure-aware downloads and image validation; unchecked `curl -sL` is not enough because 404/403 responses must stop the workflow.
 - Always report resolved absolute output paths. Do not only say `~/Desktop/...`, `./ppt-projects/...`, `/ppt`, or `/ppt-clean`, because those paths may refer to the runtime workspace rather than the user's physical desktop.
 - Keep generated project outputs outside this repository unless the user explicitly asks to commit examples.
 

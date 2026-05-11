@@ -156,6 +156,15 @@ Steps:
 6. Update `MANIFEST.md` after every imported or generated image.
 7. Stop and ask the user to review the images before Phase 3, unless they explicitly said the supplied images are already approved.
 
+Remote generation persistence rules:
+
+- Remote generation result URLs are temporary transport links, not durable source files.
+- Immediately download every generated image result to local `/ppt` during Phase 2.
+- Verify each saved image exists, is non-empty, opens as an image, and has the expected page order before moving on.
+- Record remote URLs only as provenance in `MANIFEST.md`; never rely on them as the Phase 3 source of truth.
+- If a generated result URL returns 404/403 or downloads invalid content, stop and report the failed page instead of continuing with missing local images.
+- Do not use unchecked `curl -sL` downloads. Use a failure-aware download such as `curl -fL --retry 3 -o <file> <url>` or equivalent code that checks HTTP status, file size, and image validity.
+
 User-supplied image import rules:
 
 - Accept local image files, folders, zip archives, and downloadable HTTP(S) URLs.
@@ -261,6 +270,15 @@ If images were supplied by the user:
 
 Enter Phase 3 only after explicit user approval of `/ppt` images, unless the user supplied those images and explicitly said they should be treated as final/approved.
 
+Before Phase 3 model calls:
+
+- Treat local `/ppt` images as the source of truth.
+- Verify that `/ppt` contains the expected number of text-overlaid slide images.
+- Do not use previously recorded `files.evolink.ai`, image model result, or other temporary remote URLs as reference images for clean-background generation.
+- If the clean-background model requires image URLs, upload each local `/ppt` image freshly through the upload bridge and use the newly returned `file_url`.
+- If a local `/ppt` image is missing, attempt one fresh download from recorded provenance only if available. If the download returns 404/403 or invalid image content, stop and ask the user to provide or regenerate the missing page. Do not fabricate the missing page and do not continue with a partial deck.
+- Do not let a 404 page, JSON error body, or empty file stand in for an image.
+
 Steps:
 
 1. If the user supplied matching clean no-text backgrounds, import them into `/ppt-clean` and skip clean-background generation.
@@ -268,11 +286,22 @@ Steps:
 3. Generate one clean no-text background for every `/ppt/*.png`.
 4. Save each clean image as `/ppt-clean/<same-stem>_clean.png`.
 5. Verify `/ppt` and `/ppt-clean` have the same page count and matching stems.
-6. Locate the bundled editable PPT script inside this skill:
+6. Locate the bundled editable PPT script inside this skill. Resolve the script path before running it; do not assume the current working directory is the skill directory.
 
 ```text
 commercial-ai-ppt/scripts/build_editable_ppt_vision.py
 ```
+
+Script resolution order:
+
+1. `<this-skill-dir>/scripts/build_editable_ppt_vision.py`.
+2. `./scripts/build_editable_ppt_vision.py`.
+3. `./commercial-ai-ppt/scripts/build_editable_ppt_vision.py`.
+4. `$HERMES_HOME/skills/commercial-ai-ppt/scripts/build_editable_ppt_vision.py`.
+5. `$CODEX_HOME/skills/commercial-ai-ppt/scripts/build_editable_ppt_vision.py`.
+6. `~/.codex/skills/commercial-ai-ppt/scripts/build_editable_ppt_vision.py`.
+
+If the script still cannot be found, stop and report the missing script path search. Do not create a simplified replacement and do not fall back to hand-written `python-pptx`.
 
 7. Run the bundled script; do not write a replacement python-pptx implementation from scratch.
 8. Use cross-platform OCR defaults: Apple Vision on macOS, RapidOCR on Windows/Linux, Tesseract or precomputed JSON only as fallback.
@@ -282,7 +311,7 @@ commercial-ai-ppt/scripts/build_editable_ppt_vision.py
 Recommended command:
 
 ```bash
-python scripts/build_editable_ppt_vision.py \
+python <resolved_script_path> \
   --base /path/to/project \
   --ocr-backend auto \
   --output <project-id>_editable.pptx
