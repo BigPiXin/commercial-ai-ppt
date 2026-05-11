@@ -107,6 +107,7 @@ Create this structure before Phase 2 generation or image import:
   prompts/
     image_prompts.md
     clean_background_prompts.md
+  remote_assets.json
   evolink_uploads.json
   MANIFEST.md
 ```
@@ -161,9 +162,33 @@ Remote generation persistence rules:
 - Remote generation result URLs are temporary transport links, not durable source files.
 - Immediately download every generated image result to local `/ppt` during Phase 2.
 - Verify each saved image exists, is non-empty, opens as an image, and has the expected page order before moving on.
-- Record remote URLs only as provenance in `MANIFEST.md`; never rely on them as the Phase 3 source of truth.
+- Persist remote URL metadata locally. For every generated or uploaded image, write `page`, local file path, provider, model, `file_url`, `download_url`, `file_id`, `expires_at`, and creation time to `remote_assets.json`; summarize the same non-secret mapping in `MANIFEST.md`.
+- The remote URL is a valid reusable model-facing reference while it is inside its provider retention window and passes validation. For Evolink Files this is normally 72 hours.
+- The local `/ppt` image remains the durable source of truth; the saved URL is a cached transport reference, not the only copy.
 - If a generated result URL returns 404/403 or downloads invalid content, stop and report the failed page instead of continuing with missing local images.
 - Do not use unchecked `curl -sL` downloads. Use a failure-aware download such as `curl -fL --retry 3 -o <file> <url>` or equivalent code that checks HTTP status, file size, and image validity.
+
+Minimum `remote_assets.json` shape:
+
+```json
+{
+  "assets": [
+    {
+      "page": 1,
+      "role": "text_slide",
+      "local_path_abs": "/absolute/project/ppt/01_cover.png",
+      "provider": "evolink",
+      "model": "gpt-image-2",
+      "file_url": "https://files.evolink.ai/...",
+      "download_url": "https://files.evolink.ai/...",
+      "file_id": "optional-provider-file-id",
+      "created_at": "2026-05-11T10:00:00+08:00",
+      "expires_at": "2026-05-14T10:00:00+08:00",
+      "validated_at": "2026-05-11T10:05:00+08:00"
+    }
+  ]
+}
+```
 
 User-supplied image import rules:
 
@@ -274,8 +299,9 @@ Before Phase 3 model calls:
 
 - Treat local `/ppt` images as the source of truth.
 - Verify that `/ppt` contains the expected number of text-overlaid slide images.
-- Do not use previously recorded `files.evolink.ai`, image model result, or other temporary remote URLs as reference images for clean-background generation.
-- If the clean-background model requires image URLs, upload each local `/ppt` image freshly through the upload bridge and use the newly returned `file_url`.
+- If the clean-background model requires image URLs, first check `remote_assets.json` for each `/ppt` image.
+- Reuse a cached `file_url` only when it maps to the exact local page/image, has not passed `expires_at`, and a lightweight validation request confirms it is still accessible.
+- If the cached URL is missing, expired, points to the wrong page, or returns 403/404/invalid content, upload the local `/ppt` image freshly through the upload bridge and save the new `file_url` back to `remote_assets.json`.
 - If a local `/ppt` image is missing, attempt one fresh download from recorded provenance only if available. If the download returns 404/403 or invalid image content, stop and ask the user to provide or regenerate the missing page. Do not fabricate the missing page and do not continue with a partial deck.
 - Do not let a 404 page, JSON error body, or empty file stand in for an image.
 

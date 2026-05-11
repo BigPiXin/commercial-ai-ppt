@@ -65,6 +65,7 @@ Phase 3 is editable reconstruction. After image approval, the AI generates no-te
 - Never print, save, log, or commit API keys.
 - Do not require Evolink for local image import or reconstruction. Use Evolink Files only when a remote image model needs temporary model-facing URLs.
 - Treat remote image result URLs as temporary. Download generated slides to local `ppt/` immediately and use local files as the Phase 3 source of truth.
+- Persist usable remote URL metadata in `remote_assets.json` and `MANIFEST.md`; Phase 3 may reuse cached URLs while they are unexpired and validated, then refresh them from local files when needed.
 - Use failure-aware downloads and image validation; unchecked `curl -sL` is not enough because 404/403 responses must stop the workflow.
 - Always report resolved absolute output paths. Do not only say `~/Desktop/...`, `./ppt-projects/...`, `/ppt`, or `/ppt-clean`, because those paths may refer to the runtime workspace rather than the user's physical desktop.
 - Keep generated project outputs outside this repository unless the user explicitly asks to commit examples.
@@ -99,6 +100,7 @@ A completed run should produce a project folder like:
   ppt-clean/
   ppt-editable/
   prompts/
+  remote_assets.json
   evolink_uploads.json
   MANIFEST.md
 ```
