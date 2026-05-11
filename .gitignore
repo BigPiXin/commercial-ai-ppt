@@ -1,0 +1,29 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+
+# Local secrets and environment files
+.env
+.env.*
+*.key
+*.pem
+*.p12
+
+# Generated PPT projects and heavy outputs
+ppt-projects/
+outputs/
+dist/
+build/
+*.pptx
+*.ppt
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
+
+# Local runtime artifacts
+MANIFEST.md
+evolink_uploads.json
+*_text_layers.json
