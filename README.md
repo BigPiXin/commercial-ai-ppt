@@ -46,6 +46,8 @@
 - 只有当用户明确说“图片已经准备好了”时，skill 才能切换到“导入已有页面图 -> 继续做无字底图/重建 PPT”的路径。
 - 在用户没有明确改成“我自己提供图片”的前提下，skill 不能擅自降级成只跑本地 `python-pptx` / 重建路径。
 
+仓库提供 `scripts/image_gen_preflight.py` 做硬性前置检查。完整生成模式下如果检查失败，正确行为是向用户索要出图配置，而不是自己生成 HTML、SVG、普通 PPTX 或其它替代物。
+
 ## 仓库结构
 
 ```text
@@ -56,6 +58,7 @@ ppt-helper/
     prompt-pack.md
   scripts/
     ocr_preflight.py
+    image_gen_preflight.py
     run_editable_ppt.py
     remote_asset_upload.py
     build_editable_ppt_vision.py
@@ -65,6 +68,9 @@ ppt-helper/
 
 - `scripts/ocr_preflight.py`
   用来检查当前运行时能不能做 OCR。它会探测 Python、平台、CPU 特征、PaddleOCR / RapidOCR 的真实导入能力，并给出推荐 backend。
+
+- `scripts/image_gen_preflight.py`
+  用来检查完整生成模式是否具备可调用的图像生成路径。没有 `image2` 或等价配置时必须停止并让用户补配置，不能自动降级成本地 PPTX 绘制。
 
 - `scripts/run_editable_ppt.py`
   是 Phase 3 的稳定入口。它会先做 preflight，再根据环境变量或命令行参数选择 OCR Python，最后调用真正的重建脚本。

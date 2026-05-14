@@ -20,6 +20,10 @@ Default to one continuous production run.
 
 Stop mid-run only when required inputs are missing, credentials/quota are unavailable, a tool or provider fails in a way that cannot be retried safely, or the user explicitly asks for review gates. Do not require Evolink or any image provider for local image import; require provider credentials only when a remote generation, editing, upload, or clean-background model call is actually needed.
 
+Hard stop rule: if the user asks this skill to create a PPT from source material and has not supplied finished slide images, the workflow is full production. Full production must not continue unless a callable image-generation route is available. If no route is available, stop and ask the user for an `image2`/image-generation configuration. Do not create a PPTX with `python-pptx`, HTML, SVG, Markdown, or local drawing code as a substitute for missing generated slide images.
+
+Forbidden fallback sentence: never say or do "image generation is unavailable, so I will switch to bring-your-own-images mode" unless the user actually supplied slide image files or URLs. Missing image generation means stop, not substitute.
+
 ## Continuous State Machine
 
 Treat phases as internal progress states, not conversational approval gates.
@@ -76,6 +80,8 @@ Mode safety rule:
 - In that case, stop and ask the user for one usable generation route: a callable `image2` path, a built-in image generation tool, a provider/base URL plus key, or pre-generated slide images.
 - Do not jump straight to local PPT reconstruction unless the user explicitly changes mode or already supplied the required images.
 - If the user says they already finished the image-generation step outside the skill, accept that as bring-your-own-slide-images mode and continue from image import plus PPT reconstruction.
+- The sentence "image generation tool is unavailable" is not permission to switch modes. It is a blocking error in full production mode.
+- Do not create a "visual reference", "HTML preview", "one-page PPT", "draft PPTX", or "python-pptx version" to replace the missing generated slide images. Those outputs are false completion for this skill.
 
 External image tools are first-class inputs. Images made through direct GPT chat, image2, Banana, Midjourney, designers, or other systems are valid as long as they are accessible as local files or downloadable URLs.
 
@@ -282,6 +288,8 @@ Reference image rule:
 
 Before Phase 2 image generation or Phase 3 clean-background generation:
 
+- Resolve the skill directory, then run `scripts/image_gen_preflight.py --mode full-production --json --require-ready` before generating or locally drawing any slide images in full-production mode.
+- If this preflight exits non-zero, stop immediately and report only the missing generation route. Ask the user to provide one of: `image2` route, built-in image generation tool, provider/base URL plus key, or already-generated slide images. Do not continue to Python/HTML/PPTX generation.
 - Check that the selected image model route is configured only if a model call is needed.
 - If the host provides a built-in image generation tool, use its configured credentials and do not require raw Evolink secrets just to call that tool.
 - If using `scripts/remote_asset_upload.py` or direct Evolink HTTP calls, require `EVOLINK_API_KEY` or `EVOLINK_API_TOKEN` in the environment or an equivalent configured secret.
