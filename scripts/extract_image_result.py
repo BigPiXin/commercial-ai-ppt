@@ -48,7 +48,7 @@ def collect_statuses(payload: Any) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Extract terminal image result URLs from OpenAI-compatible/Evolink-style async responses."
+        description="Extract terminal image result URLs from OpenAI-compatible or provider-specific async responses."
     )
     parser.add_argument("json_file", nargs="?", help="JSON response file. Reads stdin when omitted.")
     parser.add_argument("--json", action="store_true")

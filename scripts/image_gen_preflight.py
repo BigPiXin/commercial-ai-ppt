@@ -8,18 +8,36 @@ from pathlib import Path
 from typing import Any
 
 
-KNOWN_KEY_VARS = [
+HOST_CONFIGURED_IMAGE_KEY_VARS = [
     "IMAGE2_API_KEY",
     "IMAGE_GEN_API_KEY",
     "IMAGE_GENERATION_API_KEY",
+]
+
+KNOWN_KEY_VARS = [
+    *HOST_CONFIGURED_IMAGE_KEY_VARS,
+    "IMAGE_API_KEY",
+    "IMAGE_PROVIDER_API_KEY",
 ]
 
 KNOWN_BASE_URL_VARS = [
     "IMAGE2_BASE_URL",
     "IMAGE_GEN_BASE_URL",
     "IMAGE_GENERATION_BASE_URL",
+    "IMAGE_API_BASE_URL",
+    "IMAGE_PROVIDER_BASE_URL",
     "OPENAI_BASE_URL",
     "XIAOMI_BASE_URL",
+]
+
+KNOWN_MODEL_VARS = [
+    "IMAGE2_MODEL",
+    "IMAGE_GEN_MODEL",
+    "IMAGE_GENERATION_MODEL",
+    "IMAGE_MODEL",
+    "IMAGE_PROVIDER_MODEL",
+    "OPENAI_IMAGE_MODEL",
+    "XIAOMI_IMAGE_MODEL",
 ]
 
 
@@ -63,7 +81,7 @@ def detect_generation_route(config: dict[str, Any]) -> dict[str, Any]:
             }
         )
 
-    for key_var in KNOWN_KEY_VARS:
+    for key_var in HOST_CONFIGURED_IMAGE_KEY_VARS:
         if os.getenv(key_var, "").strip():
             routes.append(
                 {
@@ -72,6 +90,18 @@ def detect_generation_route(config: dict[str, Any]) -> dict[str, Any]:
                     "detail": "present",
                 }
             )
+
+    generic_base_url = next((var for var in KNOWN_BASE_URL_VARS if os.getenv(var, "").strip()), "")
+    generic_key = next((var for var in KNOWN_KEY_VARS if os.getenv(var, "").strip()), "")
+    generic_model = next((var for var in KNOWN_MODEL_VARS if os.getenv(var, "").strip()), "")
+    if generic_base_url and generic_key and generic_model:
+        routes.append(
+            {
+                "kind": "provider-neutral",
+                "provider": f"{generic_base_url} + {generic_key} + {generic_model}",
+                "detail": "present",
+            }
+        )
 
     if (
         os.getenv("OPENAI_API_KEY", "").strip()
@@ -191,7 +221,7 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
         "next_action": next_action,
         "blockers": blockers,
         "user_message": (
-            "我现在还缺少可调用的图片生成配置，所以不能直接进入完整 PPT 生成流程。你可以把 OpenAI 兼容的图片生成接口 URL、key 和模型名发给我，我来完成初始化配置后继续生成；或者你直接提供已经生成好的页面图片，我来帮你导入并转成可编辑 PPT。"
+            "我现在还缺少可调用的图片生成配置，所以不能直接进入完整 PPT 生成流程。你可以把图片生成接口的 URL、key 和模型名发给我，我来完成初始化配置后继续生成；如果你的接口是 OpenAI 兼容格式，也可以直接发 base URL、key、model。或者你直接提供已经生成好的页面图片，我来帮你导入并转成可编辑 PPT。"
             if not ready and args.mode == "full-production"
             else None
         ),

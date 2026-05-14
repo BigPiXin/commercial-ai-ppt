@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Upload local images or remote URLs through the configured URL bridge.
 
-This helper currently targets Evolink Files as the bridge implementation, while
-keeping the script name and calling contract provider-neutral for the rest of
-the workflow.
+This helper currently targets Evolink Files as one replaceable bridge
+implementation, while keeping the script name and calling contract
+provider-neutral for the rest of the workflow.
 """
 from __future__ import annotations
 

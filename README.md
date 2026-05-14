@@ -8,7 +8,7 @@
 - `references/` 存放只在特定阶段按需加载的提示模板。
 - `scripts/` 存放稳定、可复用的脚本，用来做上传、OCR 预检和可编辑 PPT 重建。
 
-推荐使用配置：Hermes + LLM + GPT image2 + Paddle OCR 
+推荐使用配置：Hermes + LLM + 任意可调用的图片生成服务 + PaddleOCR/RapidOCR。
 
 ## 解决什么问题
 
@@ -40,13 +40,23 @@
 
 模式切换也要明确：
 
-- 默认的完整生产路径就是依赖 `image2` 或同等级图像生成能力，先产出页面图，再产出无字底图，最后重建 PPT。
+- 默认的完整生产路径依赖“可调用的图片生成服务”，先产出页面图，再产出无字底图，最后重建 PPT。这个服务可以是 OpenAI 兼容接口、自建服务、第三方中转站、平台内置图片工具，或者其它等价能力。
 - 如果用户要的是“完整生成”，但当前环境没有可调用的图像生成路径，skill 必须停下来向用户要配置。
-- 用户可以提供：可调用的 `image2` 方式、内置出图工具、provider/base URL + key，或者直接提供已经生成好的页面图。
+- 用户可以提供：provider/base URL + key + 模型名、平台内置出图工具，或者直接提供已经生成好的页面图。
 - 只有当用户明确说“图片已经准备好了”时，skill 才能切换到“导入已有页面图 -> 继续做无字底图/重建 PPT”的路径。
 - 在用户没有明确改成“我自己提供图片”的前提下，skill 不能擅自降级成只跑本地 `python-pptx` / 重建路径。
 
 仓库提供 `scripts/image_gen_preflight.py` 做硬性前置检查。完整生成模式下如果检查失败，正确行为是引导用户补充出图配置，例如 OpenAI 兼容的图片生成接口 URL、key 和模型名；或者让用户直接提供已经生成好的页面图片。不能自己生成 HTML、SVG、普通 PPTX 或其它替代物。
+
+## 服务商无关设计
+
+`ppt-helper` 把图片生产链路拆成三个独立角色：
+
+- 图片生成服务：负责根据 prompt 生成带文字页面图，或根据参考图生成无字底图。它可以来自 OpenAI 兼容接口、自建 API、Mimo/Xiaomi、Evolink、其它中转站或宿主环境内置工具。
+- 资产 URL 桥：只在远程图片模型必须读取公网 URL、而本地文件没有可复用 URL 时使用。Evolink Files 只是当前仓库附带的一个可选桥接实现，不是默认图片平台。
+- PPT 重建后端：负责 OCR、无字底图叠加文本层、输出可编辑 `.pptx`，与图片服务商无关。
+
+因此，skill 不能把聊天模型、图片模型、文件桥接服务混为一谈。`EVOLINK_API_KEY` 不是通用的图片生成能力证明，普通聊天模型 key 也不是图片生成能力证明。完整生成模式必须能确认“有可调用的图片生成 route”；否则就向用户要图片 API 配置或已有页面图。
 
 ## 仓库结构
 
@@ -71,10 +81,10 @@ ppt-helper/
   用来检查当前运行时能不能做 OCR。它会探测 Python、平台、CPU 特征、PaddleOCR / RapidOCR 的真实导入能力，并给出推荐 backend。
 
 - `scripts/image_gen_preflight.py`
-  用来检查完整生成模式是否具备可调用的图像生成路径。没有 `image2` 或等价配置时必须停止并让用户补配置，不能自动降级成本地 PPTX 绘制。
+  用来检查完整生成模式是否具备可调用的图像生成路径。没有图片生成服务配置时必须停止并让用户补配置，不能自动降级成本地 PPTX 绘制。
 
 - `scripts/extract_image_result.py`
-  用来从 OpenAI 兼容或 Evolink 风格的异步图片任务响应里提取成功状态和图片 URL。只要轮询结果已经成功并返回图片 URL，就应该下载落盘并写入 `remote_assets.json`。
+  用来从 OpenAI 兼容或各类服务商异步图片任务响应里提取成功状态和图片 URL。只要轮询结果已经成功并返回图片 URL，就应该下载落盘并写入 `remote_assets.json`。
 
 - `scripts/run_editable_ppt.py`
   是 Phase 3 的稳定入口。它会先做 preflight，再根据环境变量或命令行参数选择 OCR Python，最后调用真正的重建脚本。
@@ -83,7 +93,7 @@ ppt-helper/
   负责把 `ppt/` 与 `ppt-clean/` 重建成可编辑 PPT，并缓存 OCR JSON。
 
 - `scripts/remote_asset_upload.py`
-  在远程图像模型必须依赖公网 URL、且当前没有可复用 URL 时，把本地图片上传到 URL bridge。当前默认桥接实现是 Evolink Files。
+  在远程图像模型必须依赖公网 URL、且当前没有可复用 URL 时，把本地图片上传到 URL bridge。仓库当前附带的桥接实现是 Evolink Files，但它只是可替换的桥，不是强依赖。
 
 ## OCR跨环境适配
 
@@ -144,7 +154,7 @@ python scripts/ocr_preflight.py --json --require-ready
 
 ## 图像来源兼容性
 
-这个 skill 不假设用户一定通过 Evolink 生成图片，也不假设所有 `image2` 调用都走同一个平台。
+这个 skill 不假设用户一定通过 Evolink 生成图片，也不假设所有图片生成调用都走同一个平台。
 
 Phase 2 产出的核心资产其实只有两类：
 
@@ -156,7 +166,7 @@ Phase 2 产出的核心资产其实只有两类：
 - 直接图像模型返回的 URL
 - OpenAI 兼容服务或中转站返回的 URL
 - 用户提供的公网 URL
-- 通过 Evolink 上传后得到的 URL
+- 通过可选 URL 桥上传后得到的 URL
 
 只要某个 URL：
 
@@ -164,11 +174,11 @@ Phase 2 产出的核心资产其实只有两类：
 - 仍然可访问
 - 还能继续喂给下游模型
 
-就应该优先复用它，而不是重新上传到 Evolink。
+就应该优先复用它，而不是重新上传到任何 URL 桥。
 
-Evolink 在这个项目里的定位是：
+Evolink 这类服务在这个项目里的定位是：
 
-- 可选的 upload bridge
+- 可选的图片服务商或 upload bridge
 - 只在“本地文件需要变成模型可读 URL，且当前没有可复用 URL”时使用
 - 不是默认图像平台
 - 不是 `remote_assets.json` 的唯一来源

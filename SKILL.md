@@ -20,7 +20,7 @@ Default to one continuous production run.
 
 Stop mid-run only when required inputs are missing, credentials/quota are unavailable, a tool or provider fails in a way that cannot be retried safely, or the user explicitly asks for review gates. Do not require Evolink or any image provider for local image import; require provider credentials only when a remote generation, editing, upload, or clean-background model call is actually needed.
 
-Hard stop rule: if the user asks this skill to create a PPT from source material and has not supplied finished slide images, the workflow is full production. Full production must not continue unless a callable image-generation route is available. If no route is available, stop and guide the user toward the next actionable choice: provide an OpenAI-compatible image-generation URL/key/model so the agent can initialize the route, or provide already-generated slide images so the agent can import them and rebuild the PPT. Do not create a PPTX with `python-pptx`, HTML, SVG, Markdown, or local drawing code as a substitute for missing generated slide images.
+Hard stop rule: if the user asks this skill to create a PPT from source material and has not supplied finished slide images, the workflow is full production. Full production must not continue unless a callable image-generation route is available. If no route is available, stop and guide the user toward the next actionable choice: provide image-generation API URL/key/model details so the agent can initialize the route, or provide already-generated slide images so the agent can import them and rebuild the PPT. OpenAI-compatible APIs are one supported shape, not a requirement. Do not create a PPTX with `python-pptx`, HTML, SVG, Markdown, or local drawing code as a substitute for missing generated slide images.
 
 Forbidden fallback sentence: never say or do "image generation is unavailable, so I will switch to bring-your-own-images mode" unless the user actually supplied slide image files or URLs. Missing image generation means stop, not substitute.
 
@@ -77,14 +77,14 @@ Default assumption:
 Mode safety rule:
 
 - If the user asked for full production and the workflow still needs model-generated slide images or clean backgrounds, do not silently downgrade into bring-your-own-images mode or reconstruction-only mode just because image generation is not configured.
-- In that case, stop and ask the user for one usable generation route: a callable `image2` path, a built-in image generation tool, a provider/base URL plus key, or pre-generated slide images.
+- In that case, stop and ask the user for one usable generation route: provider name when known, base URL, API key, image model name, and any required response/async task details; or ask for pre-generated slide images.
 - Do not jump straight to local PPT reconstruction unless the user explicitly changes mode or already supplied the required images.
 - If the user says they already finished the image-generation step outside the skill, accept that as bring-your-own-slide-images mode and continue from image import plus PPT reconstruction.
 - The sentence "image generation tool is unavailable" is not permission to switch modes. It is a blocking error in full production mode.
 - Do not create a "visual reference", "HTML preview", "one-page PPT", "draft PPTX", or "python-pptx version" to replace the missing generated slide images. Those outputs are false completion for this skill.
-- When blocked by missing image-generation configuration, be helpful and concrete. Say that the user can send the OpenAI-compatible image API URL, key, and model name, and the agent will initialize the configuration; or the user can send already-generated slide images, and the agent will turn them into a PPT.
+- When blocked by missing image-generation configuration, be helpful and concrete. Say that the user can send the image API URL, key, and model name, and the agent will initialize the configuration; OpenAI-compatible APIs are supported when available. Or the user can send already-generated slide images, and the agent will turn them into a PPT.
 
-External image tools are first-class inputs. Images made through direct GPT chat, image2, Banana, Midjourney, designers, or other systems are valid as long as they are accessible as local files or downloadable URLs.
+External image tools are first-class inputs. Images made through direct GPT chat, OpenAI-compatible image APIs, Mimo/Xiaomi, Evolink, Banana, Midjourney, designers, self-hosted models, or other systems are valid as long as they are accessible as local files or downloadable URLs.
 
 ## Required Inputs
 
@@ -110,7 +110,7 @@ Rules:
 - Preserve product names, model names, acronyms, protocol names, UI names, and technical parameters in their source form.
 - For mixed Chinese/English enterprise decks, use Chinese for narrative copy and keep English only for proper nouns, product names, acronyms, and user-provided English phrases.
 - Record `deck_language` in `approved_plan.md`, `prompts/image_prompts.md`, and `MANIFEST.md`.
-- When building `image2` prompts, include a hard rule that all visible on-slide text must match the approved slide copy in `deck_language`; do not translate, romanize, summarize, or replace it with English.
+- When building image-generation prompts, include a hard rule that all visible on-slide text must match the approved slide copy in `deck_language`; do not translate, romanize, summarize, or replace it with English.
 - If the first generated page contains the wrong language, stop immediately, revise the prompt, and regenerate that page before continuing.
 
 ## Output Directory
@@ -220,10 +220,10 @@ If image generation completes but local saving fails, Phase 2 is not complete. S
 Remote generation persistence rules:
 
 - Remote generation result URLs are temporary transport links, not durable source files.
-- For OpenAI-compatible or Evolink-style async image APIs, a generation task is successful when the final poll response indicates a terminal success status such as `succeeded`, `completed`, `success`, or `done`, and contains at least one usable image URL in fields such as `url`, `file_url`, `download_url`, `image_url`, `data[].url`, `data[].file_url`, `data[].download_url`, `output[].url`, or `images[].url`.
+- For OpenAI-compatible or provider-specific async image APIs, a generation task is successful when the final poll response indicates a terminal success status such as `succeeded`, `completed`, `success`, or `done`, and contains at least one usable image URL in fields such as `url`, `file_url`, `download_url`, `image_url`, `data[].url`, `data[].file_url`, `data[].download_url`, `output[].url`, or `images[].url`.
 - To avoid guessing async response shapes, save the final poll response JSON and run `scripts/extract_image_result.py --json --require-success <response.json>`. If it returns `success: true`, use `primary_url` as the generated image URL for that page.
 - When that success condition is met, do not keep searching for models, do not retry with another model, and do not question whether the task succeeded. Treat the returned URL as the Phase 2 text-overlaid slide image result.
-- If the user supplies a generated image URL during the run, such as an Evolink `https://files.evolink.ai/...png` URL, treat it as a successful generated image result for the relevant page unless the URL fails validation.
+- If the user supplies a generated image URL during the run, including a provider-hosted URL such as `https://files.evolink.ai/...png`, treat it as a successful generated image result for the relevant page unless the URL fails validation.
 - Immediately download every generated image result to local `/ppt` during Phase 2.
 - Verify each saved image exists, is non-empty, opens as an image, and has the expected page order before moving on.
 - Persist remote asset metadata locally. For every generated or uploaded image, write page identity, local file path, provider, model, reusable reference URL, download URL when present, provider file ID when present, expiry when known, and validation time to `remote_assets.json`; summarize the same non-secret mapping in `MANIFEST.md`.
@@ -233,7 +233,7 @@ Remote generation persistence rules:
 - If the Phase 2 image model returns a hosted image URL such as `file_url`, `download_url`, or another reusable public URL, record it immediately in `remote_assets.json` as the Phase 3 reference URL. Do not discard it and re-upload the same local file later.
 - Phase 2 is complete for a page only after both of these are true: the remote success URL is recorded in `remote_assets.json`, and the image has been downloaded and validated under `/ppt`.
 - If a generated result URL returns 404/403 or downloads invalid content, stop and report the failed page instead of continuing with missing local images.
-- Do not use unchecked `curl -sL` or `curl -s -o` downloads. For Evolink `files.evolink.ai` result URLs, prefer:
+- Do not use unchecked `curl -sL` or `curl -s -o` downloads. For provider-hosted result URLs, including `files.evolink.ai`, prefer:
   `curl -fL --retry 3 --retry-delay 2 --connect-timeout 15 --max-time 180 -A "Mozilla/5.0" -o "<local_png>" "<url>"`
   Then verify HTTP success, non-zero file size, and image validity before continuing.
 
@@ -251,8 +251,8 @@ Minimum `remote_assets.json` shape:
       "source_kind": "generated",
       "transport": "remote_url",
       "reference_url": "https://example.com/asset/01_cover.png",
-      "file_url": "https://files.evolink.ai/...",
-      "download_url": "https://files.evolink.ai/...",
+      "file_url": "https://provider.example/asset/01_cover.png",
+      "download_url": "https://provider.example/download/01_cover.png",
       "file_id": "optional-provider-file-id",
       "reusable_for_model_input": true,
       "created_at": "2026-05-11T10:00:00+08:00",
@@ -271,11 +271,11 @@ User-supplied image import rules:
 - Copy images into `/ppt`; do not modify originals in place.
 - Save source mapping to `source/imported_assets.md`.
 - If page order, missing pages, or duplicate versions are ambiguous, ask the user before continuing.
-- Do not call Evolink, image2, or any remote image model just to import already-available slide images.
+- Do not call any image provider, URL bridge, or remote image model just to import already-available slide images.
 
 Image generation defaults:
 
-- Model: `gpt-image-2` or the configured `image2` equivalent.
+- Model: use the configured image-generation model for the user's provider. Examples include OpenAI-compatible image models, Mimo/Xiaomi image models, Evolink image routes, or self-hosted models.
 - Size: `16:9`.
 - Resolution: `2K` by default. Never use `4K` unless the user explicitly asks.
 - Quality: `medium` by default; pass it explicitly when the image tool has a `quality` parameter. Use `high` only when the user explicitly asks.
@@ -284,9 +284,9 @@ Image generation defaults:
 
 Reference image rule:
 
-- If the image model/API needs a URL for a local reference image, use an existing valid URL from `remote_assets.json` first. Upload the local image through Evolink Files only when no valid cached URL exists.
+- If the image model/API needs a URL for a local reference image, use an existing valid URL from `remote_assets.json` first. Upload the local image through a configured URL bridge only when no valid cached URL exists.
 - Do not assume the image provider is Evolink. If Phase 2 already produced a reusable model-facing URL through some other service, keep using that service's URL until it expires or fails validation.
-- Use Evolink Files only as an optional upload bridge for local files that still need a model-facing URL. If the user separately wants long-term publishing, finish this PPT workflow first and use a separate publishing workflow.
+- Use Evolink Files only as one optional upload bridge implementation for local files that still need a model-facing URL. If the user separately wants long-term publishing, finish this PPT workflow first and use a separate publishing workflow.
 - Do not pass private local file paths to remote image APIs unless the tool explicitly uploads them.
 - This rule applies only when a remote image API needs a URL. It does not apply when the user supplied final slide images for local reconstruction.
 
@@ -298,13 +298,13 @@ Before Phase 2 image generation or Phase 3 clean-background generation:
 - If this preflight exits non-zero, stop immediately and guide the user. Use wording like:
 
 ```text
-我现在还缺少可调用的图片生成配置，所以不能直接进入完整 PPT 生成流程。你可以把 OpenAI 兼容的图片生成接口 URL、key 和模型名发给我，我来完成初始化配置后继续生成；或者你直接提供已经生成好的页面图片，我来帮你导入并转成可编辑 PPT。
+我现在还缺少可调用的图片生成配置，所以不能直接进入完整 PPT 生成流程。你可以把图片生成接口的 URL、key 和模型名发给我，我来完成初始化配置后继续生成；如果你的接口是 OpenAI 兼容格式，也可以直接发 base URL、key、model。或者你直接提供已经生成好的页面图片，我来帮你导入并转成可编辑 PPT。
 ```
 
 Do not continue to Python/HTML/PPTX generation while waiting for the user's choice.
 - Check that the selected image model route is configured only if a model call is needed.
-- If the host provides a built-in image generation tool, use its configured credentials and do not require raw Evolink secrets just to call that tool.
-- If using `scripts/remote_asset_upload.py` or direct Evolink HTTP calls, require `EVOLINK_API_KEY` or `EVOLINK_API_TOKEN` in the environment or an equivalent configured secret.
+- If the host provides a built-in image generation tool, use its configured credentials and do not require any specific provider secret just to call that tool.
+- If using `scripts/remote_asset_upload.py` or a provider-specific URL bridge, require only that bridge's token. For the bundled Evolink bridge implementation, use `EVOLINK_API_KEY` or `EVOLINK_API_TOKEN`.
 - If a key, login, subscription, quota, or model access is missing, stop and tell the user exactly what is missing.
 - If the user asked for full production and no callable image generation route is available, explicitly ask the user to provide one usable generation configuration or already-generated slide images. Do not self-select local reconstruction as a fallback.
 - If the user supplied both `/ppt` images and matching `/ppt-clean` backgrounds, no image-provider credential is required for reconstruction.
@@ -346,11 +346,11 @@ If OCR setup fails, do not write a new one-off PPT builder. Either fix the OCR e
 
 When Phase 3 runs through `scripts/run_editable_ppt.py`, keep the generated `OCR Runtime` section in `MANIFEST.md`. It is part of the delivery record and explains which Python and backend were actually used on that host.
 
-## Evolink File Upload Bridge
+## Optional URL Bridge
 
-Use Evolink Files as an optional temporary public URL bridge for local reference images when a remote image API requires image URLs and no reusable URL already exists. This avoids repository authentication, repository permissions, and raw URL issues. Do not use this bridge for purely local image import or reconstruction, and do not assume every generated image came from Evolink.
+Use a URL bridge only as an optional temporary public URL bridge for local reference images when a remote image API requires image URLs and no reusable URL already exists. This avoids repository authentication, repository permissions, and raw URL issues. Do not use a bridge for purely local image import or reconstruction, and do not assume every generated image came from the bridge provider.
 
-Official endpoints:
+The bundled helper currently implements Evolink Files as one replaceable bridge. These are Evolink-specific endpoints, not general requirements:
 
 - Base64 upload: `POST https://files-api.evolink.ai/api/v1/files/upload/base64`
 - Stream upload: `POST https://files-api.evolink.ai/api/v1/files/upload/stream`
@@ -387,7 +387,7 @@ $env:EVOLINK_API_KEY="..."
 python scripts/remote_asset_upload.py .\ppt\01_cover.png --upload-path <project-id>/ppt --manifest .\upload_bridge_records.json
 ```
 
-When a remote image API needs reference URLs, pass the best available validated URL in `image_urls`. That may be a Phase 2 generation URL from any provider or an Evolink-uploaded `file_url`.
+When a remote image API needs reference URLs, pass the best available validated URL in `image_urls`. That may be a Phase 2 generation URL from any provider or a URL returned by the configured bridge.
 
 ## Long-Term Publishing
 
@@ -422,8 +422,8 @@ Before Phase 3 model calls:
 - If the clean-background model requires image URLs, use this strict source priority for each `/ppt` image:
   1. Reuse the Phase 2 generation result URL recorded in `remote_assets.json` (`reference_url` first, then `file_url`, then `download_url`) when it maps to the exact local page/image and has not passed `expires_at`.
   2. Validate the cached URL with a lightweight HTTP request or image-open check before using it. If validation passes, pass that URL directly in `image_urls`.
-  3. Upload the local `/ppt` image through the upload bridge only when the cached URL is missing, expired, points to the wrong page, or returns 403/404/invalid content.
-- Do not attempt a fresh Evolink upload before checking existing Phase 2 URLs. Fresh upload requires `EVOLINK_API_KEY`/`EVOLINK_API_TOKEN`; cached Phase 2 result URLs from other providers usually do not.
+  3. Upload the local `/ppt` image through the configured URL bridge only when the cached URL is missing, expired, points to the wrong page, or returns 403/404/invalid content.
+- Do not attempt a fresh bridge upload before checking existing Phase 2 URLs. Fresh upload requires the bridge's token; cached Phase 2 result URLs from providers usually do not.
 - If upload credentials are missing but valid Phase 2 URLs exist, continue with the valid cached URLs instead of stopping.
 - Save any refreshed upload URL back to `remote_assets.json`.
 - If a local `/ppt` image is missing, attempt one fresh download from recorded provenance only if available. If the download returns 404/403 or invalid image content, stop and ask the user to provide or regenerate the missing page. Do not fabricate the missing page and do not continue with a partial deck.
