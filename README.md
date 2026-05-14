@@ -63,7 +63,7 @@ ppt-helper/
   负责把 `ppt/` 与 `ppt-clean/` 重建成可编辑 PPT，并缓存 OCR JSON。
 
 - `scripts/evolink_upload.py`
-  在远程图像模型必须依赖公网 URL 时，把本地图片上传到 Evolink Files，返回可临时复用的 `file_url`。
+  在远程图像模型必须依赖公网 URL、且当前没有可复用 URL 时，把本地图片上传到 Evolink Files，返回可临时复用的 `file_url`。
 
 ## OCR跨环境适配
 
@@ -122,6 +122,37 @@ python scripts/ocr_preflight.py --json --require-ready
 
 这样每一个输出目录都能解释自己“为什么这样跑”。
 
+## 图像来源兼容性
+
+这个 skill 不假设用户一定通过 Evolink 生成图片，也不假设所有 `image2` 调用都走同一个平台。
+
+Phase 2 产出的核心资产其实只有两类：
+
+- 本地落盘的页面图
+- 可在后续模型调用里复用的远程 URL
+
+因此 `remote_assets.json` 应被理解为“通用远程资产表”，而不是某个特定平台的记录文件。它可以记录：
+
+- 直接图像模型返回的 URL
+- OpenAI 兼容服务或中转站返回的 URL
+- 用户提供的公网 URL
+- 通过 Evolink 上传后得到的 URL
+
+只要某个 URL：
+
+- 对应正确页面
+- 仍然可访问
+- 还能继续喂给下游模型
+
+就应该优先复用它，而不是重新上传到 Evolink。
+
+Evolink 在这个项目里的定位是：
+
+- 可选的 upload bridge
+- 只在“本地文件需要变成模型可读 URL，且当前没有可复用 URL”时使用
+- 不是默认图像平台
+- 不是 `remote_assets.json` 的唯一来源
+
 ## 输出约定
 
 一次完整执行通常会得到这样的目录：
@@ -145,6 +176,7 @@ python scripts/ocr_preflight.py --json --require-ready
 - 项目目录绝对路径
 - `ppt/`、`ppt-clean/`、`ppt-editable/` 绝对路径
 - 图像来源与远程 URL 映射
+- 远程资产的提供方、可复用 URL、有效期与验证状态
 - 最终 `.pptx` 路径
 - OCR Runtime 信息
 - 已知限制和异常页

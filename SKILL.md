@@ -203,10 +203,11 @@ Remote generation persistence rules:
 - Remote generation result URLs are temporary transport links, not durable source files.
 - Immediately download every generated image result to local `/ppt` during Phase 2.
 - Verify each saved image exists, is non-empty, opens as an image, and has the expected page order before moving on.
-- Persist remote URL metadata locally. For every generated or uploaded image, write `page`, local file path, provider, model, `file_url`, `download_url`, `file_id`, `expires_at`, and creation time to `remote_assets.json`; summarize the same non-secret mapping in `MANIFEST.md`.
-- The remote URL is a valid reusable model-facing reference while it is inside its provider retention window and passes validation. For Evolink Files this is normally 72 hours.
-- The local `/ppt` image remains the durable source of truth; the saved URL is a cached transport reference, not the only copy.
-- If the Phase 2 image model returns a `file_url`, `download_url`, or equivalent hosted image URL, record it immediately in `remote_assets.json` as the Phase 3 reference URL. Do not discard it and re-upload the same local file later.
+- Persist remote asset metadata locally. For every generated or uploaded image, write page identity, local file path, provider, model, reusable reference URL, download URL when present, provider file ID when present, expiry when known, and validation time to `remote_assets.json`; summarize the same non-secret mapping in `MANIFEST.md`.
+- Treat `remote_assets.json` as a provider-agnostic asset table, not an Evolink-only record. It may contain assets from direct model APIs, OpenAI-compatible image gateways, proxy services, user-provided public URLs, or Evolink uploads.
+- A remote URL is a valid reusable model-facing reference while it is inside its provider retention window or otherwise remains accessible and passes validation.
+- The local `/ppt` image remains the durable source of truth; any saved URL is a cached transport reference, not the only copy.
+- If the Phase 2 image model returns a hosted image URL such as `file_url`, `download_url`, or another reusable public URL, record it immediately in `remote_assets.json` as the Phase 3 reference URL. Do not discard it and re-upload the same local file later.
 - If a generated result URL returns 404/403 or downloads invalid content, stop and report the failed page instead of continuing with missing local images.
 - Do not use unchecked `curl -sL` or `curl -s -o` downloads. For Evolink `files.evolink.ai` result URLs, prefer:
   `curl -fL --retry 3 --retry-delay 2 --connect-timeout 15 --max-time 180 -A "Mozilla/5.0" -o "<local_png>" "<url>"`
@@ -221,11 +222,15 @@ Minimum `remote_assets.json` shape:
       "page": 1,
       "role": "text_slide",
       "local_path_abs": "/absolute/project/ppt/01_cover.png",
-      "provider": "evolink",
+      "provider": "openai-image",
       "model": "gpt-image-2",
+      "source_kind": "generated",
+      "transport": "remote_url",
+      "reference_url": "https://example.com/asset/01_cover.png",
       "file_url": "https://files.evolink.ai/...",
       "download_url": "https://files.evolink.ai/...",
       "file_id": "optional-provider-file-id",
+      "reusable_for_model_input": true,
       "created_at": "2026-05-11T10:00:00+08:00",
       "expires_at": "2026-05-14T10:00:00+08:00",
       "validated_at": "2026-05-11T10:05:00+08:00"
@@ -256,7 +261,8 @@ Image generation defaults:
 Reference image rule:
 
 - If the image model/API needs a URL for a local reference image, use an existing valid URL from `remote_assets.json` first. Upload the local image through Evolink Files only when no valid cached URL exists.
-- Use Evolink Files for model-facing image URLs. If the user separately wants long-term publishing, finish this PPT workflow first and use a separate publishing workflow.
+- Do not assume the image provider is Evolink. If Phase 2 already produced a reusable model-facing URL through some other service, keep using that service's URL until it expires or fails validation.
+- Use Evolink Files only as an optional upload bridge for local files that still need a model-facing URL. If the user separately wants long-term publishing, finish this PPT workflow first and use a separate publishing workflow.
 - Do not pass private local file paths to remote image APIs unless the tool explicitly uploads them.
 - This rule applies only when a remote image API needs a URL. It does not apply when the user supplied final slide images for local reconstruction.
 
@@ -309,7 +315,7 @@ When Phase 3 runs through `scripts/run_editable_ppt.py`, keep the generated `OCR
 
 ## Evolink File Upload Bridge
 
-Use Evolink Files as the preferred temporary public URL bridge for local reference images when a remote image API requires image URLs. This avoids repository authentication, repository permissions, and raw URL issues. Do not use this bridge for purely local image import or reconstruction.
+Use Evolink Files as an optional temporary public URL bridge for local reference images when a remote image API requires image URLs and no reusable URL already exists. This avoids repository authentication, repository permissions, and raw URL issues. Do not use this bridge for purely local image import or reconstruction, and do not assume every generated image came from Evolink.
 
 Official endpoints:
 
@@ -348,11 +354,11 @@ $env:EVOLINK_API_KEY="..."
 python scripts/evolink_upload.py .\ppt\01_cover.png --upload-path <project-id>/ppt --manifest .\evolink_uploads.json
 ```
 
-When calling `gpt-image-2` image editing or clean-background generation, pass the uploaded `file_url` in `image_urls`.
+When a remote image API needs reference URLs, pass the best available validated URL in `image_urls`. That may be a Phase 2 generation URL from any provider or an Evolink-uploaded `file_url`.
 
 ## Long-Term Publishing
 
-Long-term sharing or repository publication is outside this PPT production workflow. The default workflow keeps authoritative files locally and uses Evolink Files only as a temporary model-facing URL bridge. If the user asks to publish final assets after completion, treat that as a separate task.
+Long-term sharing or repository publication is outside this PPT production workflow. The default workflow keeps authoritative files locally and uses remote URLs only as temporary transport handles. If the user asks to publish final assets after completion, treat that as a separate task.
 
 Phase 2 progress wording:
 
@@ -381,10 +387,10 @@ Before Phase 3 model calls:
 - Treat local `/ppt` images as the source of truth.
 - Verify that `/ppt` contains the expected number of text-overlaid slide images.
 - If the clean-background model requires image URLs, use this strict source priority for each `/ppt` image:
-  1. Reuse the Phase 2 generation result URL recorded in `remote_assets.json` (`file_url` first, then `download_url`) when it maps to the exact local page/image and has not passed `expires_at`.
+  1. Reuse the Phase 2 generation result URL recorded in `remote_assets.json` (`reference_url` first, then `file_url`, then `download_url`) when it maps to the exact local page/image and has not passed `expires_at`.
   2. Validate the cached URL with a lightweight HTTP request or image-open check before using it. If validation passes, pass that URL directly in `image_urls`.
   3. Upload the local `/ppt` image through the upload bridge only when the cached URL is missing, expired, points to the wrong page, or returns 403/404/invalid content.
-- Do not attempt a fresh Evolink upload before checking Phase 2 URLs. Fresh upload requires `EVOLINK_API_KEY`/`EVOLINK_API_TOKEN`; cached Phase 2 result URLs usually do not.
+- Do not attempt a fresh Evolink upload before checking existing Phase 2 URLs. Fresh upload requires `EVOLINK_API_KEY`/`EVOLINK_API_TOKEN`; cached Phase 2 result URLs from other providers usually do not.
 - If upload credentials are missing but valid Phase 2 URLs exist, continue with the valid cached URLs instead of stopping.
 - Save any refreshed upload URL back to `remote_assets.json`.
 - If a local `/ppt` image is missing, attempt one fresh download from recorded provenance only if available. If the download returns 404/403 or invalid image content, stop and ask the user to provide or regenerate the missing page. Do not fabricate the missing page and do not continue with a partial deck.
