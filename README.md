@@ -59,6 +59,7 @@ ppt-helper/
   scripts/
     ocr_preflight.py
     image_gen_preflight.py
+    extract_image_result.py
     run_editable_ppt.py
     remote_asset_upload.py
     build_editable_ppt_vision.py
@@ -71,6 +72,9 @@ ppt-helper/
 
 - `scripts/image_gen_preflight.py`
   用来检查完整生成模式是否具备可调用的图像生成路径。没有 `image2` 或等价配置时必须停止并让用户补配置，不能自动降级成本地 PPTX 绘制。
+
+- `scripts/extract_image_result.py`
+  用来从 OpenAI 兼容或 Evolink 风格的异步图片任务响应里提取成功状态和图片 URL。只要轮询结果已经成功并返回图片 URL，就应该下载落盘并写入 `remote_assets.json`。
 
 - `scripts/run_editable_ppt.py`
   是 Phase 3 的稳定入口。它会先做 preflight，再根据环境变量或命令行参数选择 OCR Python，最后调用真正的重建脚本。

@@ -220,6 +220,10 @@ If image generation completes but local saving fails, Phase 2 is not complete. S
 Remote generation persistence rules:
 
 - Remote generation result URLs are temporary transport links, not durable source files.
+- For OpenAI-compatible or Evolink-style async image APIs, a generation task is successful when the final poll response indicates a terminal success status such as `succeeded`, `completed`, `success`, or `done`, and contains at least one usable image URL in fields such as `url`, `file_url`, `download_url`, `image_url`, `data[].url`, `data[].file_url`, `data[].download_url`, `output[].url`, or `images[].url`.
+- To avoid guessing async response shapes, save the final poll response JSON and run `scripts/extract_image_result.py --json --require-success <response.json>`. If it returns `success: true`, use `primary_url` as the generated image URL for that page.
+- When that success condition is met, do not keep searching for models, do not retry with another model, and do not question whether the task succeeded. Treat the returned URL as the Phase 2 text-overlaid slide image result.
+- If the user supplies a generated image URL during the run, such as an Evolink `https://files.evolink.ai/...png` URL, treat it as a successful generated image result for the relevant page unless the URL fails validation.
 - Immediately download every generated image result to local `/ppt` during Phase 2.
 - Verify each saved image exists, is non-empty, opens as an image, and has the expected page order before moving on.
 - Persist remote asset metadata locally. For every generated or uploaded image, write page identity, local file path, provider, model, reusable reference URL, download URL when present, provider file ID when present, expiry when known, and validation time to `remote_assets.json`; summarize the same non-secret mapping in `MANIFEST.md`.
@@ -227,6 +231,7 @@ Remote generation persistence rules:
 - A remote URL is a valid reusable model-facing reference while it is inside its provider retention window or otherwise remains accessible and passes validation.
 - The local `/ppt` image remains the durable source of truth; any saved URL is a cached transport reference, not the only copy.
 - If the Phase 2 image model returns a hosted image URL such as `file_url`, `download_url`, or another reusable public URL, record it immediately in `remote_assets.json` as the Phase 3 reference URL. Do not discard it and re-upload the same local file later.
+- Phase 2 is complete for a page only after both of these are true: the remote success URL is recorded in `remote_assets.json`, and the image has been downloaded and validated under `/ppt`.
 - If a generated result URL returns 404/403 or downloads invalid content, stop and report the failed page instead of continuing with missing local images.
 - Do not use unchecked `curl -sL` or `curl -s -o` downloads. For Evolink `files.evolink.ai` result URLs, prefer:
   `curl -fL --retry 3 --retry-delay 2 --connect-timeout 15 --max-time 180 -A "Mozilla/5.0" -o "<local_png>" "<url>"`
