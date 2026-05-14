@@ -147,7 +147,7 @@ Create this structure before Phase 2 generation or image import:
     image_prompts.md
     clean_background_prompts.md
   remote_assets.json
-  evolink_uploads.json
+  upload_bridge_records.json
   MANIFEST.md
 ```
 
@@ -272,12 +272,12 @@ Before Phase 2 image generation or Phase 3 clean-background generation:
 
 - Check that the selected image model route is configured only if a model call is needed.
 - If the host provides a built-in image generation tool, use its configured credentials and do not require raw Evolink secrets just to call that tool.
-- If using `scripts/evolink_upload.py` or direct Evolink HTTP calls, require `EVOLINK_API_KEY` or `EVOLINK_API_TOKEN` in the environment or an equivalent configured secret.
+- If using `scripts/remote_asset_upload.py` or direct Evolink HTTP calls, require `EVOLINK_API_KEY` or `EVOLINK_API_TOKEN` in the environment or an equivalent configured secret.
 - If a key, login, subscription, quota, or model access is missing, stop and tell the user exactly what is missing.
 - If the user supplied both `/ppt` images and matching `/ppt-clean` backgrounds, no image-provider credential is required for reconstruction.
 - Never print, save, echo, or write API keys/tokens into prompts, Markdown files, `MANIFEST.md`, logs, URLs, or screenshots.
 - Do not silently switch providers after authentication or quota failures. Ask the user before switching.
-- Record only non-secret status in `MANIFEST.md`, such as `evolink_upload: available` or `image_provider: missing_key`.
+- Record only non-secret status in `MANIFEST.md`, such as `upload_bridge: available` or `image_provider: missing_key`.
 
 ## OCR Runtime Preflight
 
@@ -335,10 +335,10 @@ Behavior and constraints:
 Use this skill's helper script for cross-platform local uploads:
 
 ```bash
-python scripts/evolink_upload.py \
+python scripts/remote_asset_upload.py \
   /path/to/project/ppt/01_cover.png \
   --upload-path <project-id>/ppt \
-  --manifest /path/to/project/evolink_uploads.json
+  --manifest /path/to/project/upload_bridge_records.json
 ```
 
 The script tries stream upload first for local files, falls back to Base64 upload if needed, and uses URL upload for existing public HTTP(S) URLs. It prints the returned `file_url`. Set the token with:
@@ -351,7 +351,7 @@ On Windows PowerShell:
 
 ```powershell
 $env:EVOLINK_API_KEY="..."
-python scripts/evolink_upload.py .\ppt\01_cover.png --upload-path <project-id>/ppt --manifest .\evolink_uploads.json
+python scripts/remote_asset_upload.py .\ppt\01_cover.png --upload-path <project-id>/ppt --manifest .\upload_bridge_records.json
 ```
 
 When a remote image API needs reference URLs, pass the best available validated URL in `image_urls`. That may be a Phase 2 generation URL from any provider or an Evolink-uploaded `file_url`.

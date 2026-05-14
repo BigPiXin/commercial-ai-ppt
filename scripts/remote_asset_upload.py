@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Upload local images or remote URLs to Evolink Files and emit public file URLs.
+"""Upload local images or remote URLs through the configured URL bridge.
 
-The script uses only Python standard library modules. Local files are uploaded
-through the stream endpoint first, then retried through Base64 if the provider
-edge rejects multipart upload in a constrained runtime.
+This helper currently targets Evolink Files as the bridge implementation, while
+keeping the script name and calling contract provider-neutral for the rest of
+the workflow.
 """
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ def request_json(endpoint: str, token: str, payload: dict) -> dict:
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Evolink upload failed: HTTP {exc.code}: {body}") from exc
+        raise RuntimeError(f"URL bridge upload failed: HTTP {exc.code}: {body}") from exc
 
 
 def upload_local_base64(path: Path, token: str, upload_path: str | None) -> dict:
@@ -99,7 +99,7 @@ def request_multipart(endpoint: str, token: str, fields: dict[str, str | None], 
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Evolink stream upload failed: HTTP {exc.code}: {body}") from exc
+        raise RuntimeError(f"URL bridge stream upload failed: HTTP {exc.code}: {body}") from exc
 
 
 def upload_local_stream(path: Path, token: str, upload_path: str | None) -> dict:
@@ -118,10 +118,11 @@ def upload_remote_url(url: str, token: str, upload_path: str | None, file_name: 
 
 def normalize_result(source: str, result: dict) -> dict:
     if not result.get("success"):
-        raise RuntimeError(f"Evolink upload failed for {source}: {json.dumps(result, ensure_ascii=False)}")
+        raise RuntimeError(f"URL bridge upload failed for {source}: {json.dumps(result, ensure_ascii=False)}")
     data = result.get("data") or {}
     return {
         "source": source,
+        "bridge_provider": "evolink",
         "file_id": data.get("file_id"),
         "file_name": data.get("file_name"),
         "mime_type": data.get("mime_type"),
@@ -133,16 +134,16 @@ def normalize_result(source: str, result: dict) -> dict:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Upload images to Evolink Files and output file_url mappings.")
+    parser = argparse.ArgumentParser(description="Upload images through the configured URL bridge and output file_url mappings.")
     parser.add_argument("inputs", nargs="+", help="Local image paths or public HTTP(S) URLs.")
-    parser.add_argument("--upload-path", default=None, help="Optional Evolink upload_path, e.g. project-id/ppt.")
+    parser.add_argument("--upload-path", default=None, help="Optional bridge upload_path, e.g. project-id/ppt.")
     parser.add_argument("--manifest", default=None, help="Optional JSON file to write upload results.")
-    parser.add_argument("--token-env", default="EVOLINK_API_KEY", help="Env var containing the Evolink API key.")
+    parser.add_argument("--token-env", default="EVOLINK_API_KEY", help="Env var containing the URL bridge API key.")
     args = parser.parse_args()
 
     token = os.getenv(args.token_env) or os.getenv("EVOLINK_API_TOKEN")
     if not token:
-        raise SystemExit(f"Missing Evolink token. Set {args.token_env} or EVOLINK_API_TOKEN.")
+        raise SystemExit(f"Missing URL bridge token. Set {args.token_env} or EVOLINK_API_TOKEN.")
 
     records = []
     for item in args.inputs:

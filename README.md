@@ -47,7 +47,7 @@ ppt-helper/
   scripts/
     ocr_preflight.py
     run_editable_ppt.py
-    evolink_upload.py
+    remote_asset_upload.py
     build_editable_ppt_vision.py
 ```
 
@@ -62,8 +62,8 @@ ppt-helper/
 - `scripts/build_editable_ppt_vision.py`
   负责把 `ppt/` 与 `ppt-clean/` 重建成可编辑 PPT，并缓存 OCR JSON。
 
-- `scripts/evolink_upload.py`
-  在远程图像模型必须依赖公网 URL、且当前没有可复用 URL 时，把本地图片上传到 Evolink Files，返回可临时复用的 `file_url`。
+- `scripts/remote_asset_upload.py`
+  在远程图像模型必须依赖公网 URL、且当前没有可复用 URL 时，把本地图片上传到 URL bridge。当前默认桥接实现是 Evolink Files。
 
 ## OCR跨环境适配
 
@@ -167,7 +167,7 @@ Evolink 在这个项目里的定位是：
   ppt-editable/
   prompts/
   remote_assets.json
-  evolink_uploads.json
+  upload_bridge_records.json
   MANIFEST.md
 ```
 
