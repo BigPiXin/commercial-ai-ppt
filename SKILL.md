@@ -59,11 +59,23 @@ Grounding rule: final or progress messages may say "generated", "checked", "ran"
 
 Choose the lightest mode that matches the user's actual inputs.
 
+Default assumption:
+
+- Treat full production as an image-generation-first workflow. The normal path is: approved plan -> model-generated slide images -> model-generated clean backgrounds -> editable PPT reconstruction.
+- Switch away from that path only when the user explicitly says the slide images are already prepared, the clean backgrounds are already prepared, or they want reconstruction only.
+
 - Full production mode: use when the user provides source content and wants this skill to plan copy, generate slide images, generate clean backgrounds, and rebuild PPTX.
 - Bring-your-own-slide-images mode: use when the user already has text-overlaid slide images from GPT image tools, Midjourney, Banana, other image models, designers, or manual work. Skip automated slide-image generation, create the project folder, copy/import those images into `/ppt`, record their source, then continue to clean backgrounds and editable PPT reconstruction.
 - Bring-your-own-backgrounds mode: use when the user provides both text-overlaid slide images and matching clean no-text backgrounds. Skip image generation and clean-background generation, verify image counts and ordering, then run editable PPT reconstruction.
 - Reconstruction-only mode: use when the user only wants an editable PPT from existing images. Do not force Phase 1 planning; ask only for missing image paths, page order, and deck language if unknown.
 - Review-gated mode: use only when the user explicitly asks to approve copy or images before continuing. Record the gate in `MANIFEST.md` so a later turn can resume from real files, not from chat memory.
+
+Mode safety rule:
+
+- If the user asked for full production and the workflow still needs model-generated slide images or clean backgrounds, do not silently downgrade into bring-your-own-images mode or reconstruction-only mode just because image generation is not configured.
+- In that case, stop and ask the user for one usable generation route: a callable `image2` path, a built-in image generation tool, a provider/base URL plus key, or pre-generated slide images.
+- Do not jump straight to local PPT reconstruction unless the user explicitly changes mode or already supplied the required images.
+- If the user says they already finished the image-generation step outside the skill, accept that as bring-your-own-slide-images mode and continue from image import plus PPT reconstruction.
 
 External image tools are first-class inputs. Images made through direct GPT chat, image2, Banana, Midjourney, designers, or other systems are valid as long as they are accessible as local files or downloadable URLs.
 
@@ -274,6 +286,7 @@ Before Phase 2 image generation or Phase 3 clean-background generation:
 - If the host provides a built-in image generation tool, use its configured credentials and do not require raw Evolink secrets just to call that tool.
 - If using `scripts/remote_asset_upload.py` or direct Evolink HTTP calls, require `EVOLINK_API_KEY` or `EVOLINK_API_TOKEN` in the environment or an equivalent configured secret.
 - If a key, login, subscription, quota, or model access is missing, stop and tell the user exactly what is missing.
+- If the user asked for full production and no callable image generation route is available, explicitly ask the user to provide one usable generation configuration or to switch to bring-your-own-images mode. Do not self-select local reconstruction as a fallback.
 - If the user supplied both `/ppt` images and matching `/ppt-clean` backgrounds, no image-provider credential is required for reconstruction.
 - Never print, save, echo, or write API keys/tokens into prompts, Markdown files, `MANIFEST.md`, logs, URLs, or screenshots.
 - Do not silently switch providers after authentication or quota failures. Ask the user before switching.
