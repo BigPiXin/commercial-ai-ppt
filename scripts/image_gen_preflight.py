@@ -191,7 +191,7 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
         "next_action": next_action,
         "blockers": blockers,
         "user_message": (
-            "Missing image generation route. Ask the user to provide image2/built-in image tool/provider+base_url+key, or explicitly switch to bring-your-own-images mode."
+            "我现在还缺少可调用的图片生成配置，所以不能直接进入完整 PPT 生成流程。你可以把 OpenAI 兼容的图片生成接口 URL、key 和模型名发给我，我来完成初始化配置后继续生成；或者你直接提供已经生成好的页面图片，我来帮你导入并转成可编辑 PPT。"
             if not ready and args.mode == "full-production"
             else None
         ),
