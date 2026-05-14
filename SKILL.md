@@ -1,11 +1,11 @@
 ---
-name: commercial-ai-ppt
-description: "Use when the user asks to create, generate, write, design, import, or rebuild a commercial PowerPoint deck, proposal deck, solution presentation, pitch deck, slide images, no-text backgrounds, or editable PPT from text, documents, images, or product materials. This skill supports both automated image generation and bring-your-own-image workflows, then rebuilds editable PPT output through clean backgrounds and text-layer reconstruction."
+name: ppt-helper
+description: "Use when the user asks to create, generate, write, design, import, or rebuild a PowerPoint deck, proposal deck, solution presentation, pitch deck, slide images, no-text backgrounds, or editable PPT from text, documents, images, or product materials. This skill supports both automated image generation and bring-your-own-image workflows, then rebuilds editable PPT output through clean backgrounds and text-layer reconstruction."
 ---
 
-# Commercial AI PPT Production
+# PPT Helper
 
-This skill turns user-provided solution content, product materials, documents, images, or rough requirements into a commercial-grade PPT workflow. It is a composite workflow: use specialized skills/tools as needed, but keep this skill as the top-level controller.
+This skill turns user-provided solution content, product materials, documents, images, or rough requirements into a production-ready PPT workflow. It is a composite workflow: use specialized skills/tools as needed, but keep this skill as the top-level controller.
 
 ## Core Contract
 
@@ -160,7 +160,7 @@ Public URL reporting is a deployment feature, not a requirement. If no public ba
 
 ## Phase 1: Content And Chapter Planning
 
-Goal: turn user material into a production-ready commercial presentation plan.
+Goal: turn user material into a production-ready presentation plan.
 
 Phase 1 is the internal planning step for the continuous run. It may create the project folder and write `source/approved_plan.md`. Do not stop after Phase 1 unless review-gated mode is explicitly enabled or required facts are missing.
 
@@ -400,17 +400,17 @@ Steps:
 6. Locate the bundled editable PPT entrypoint inside this skill. Resolve the script path before running it; do not assume the current working directory is the skill directory.
 
 ```text
-commercial-ai-ppt/scripts/run_editable_ppt.py
+ppt-helper/scripts/run_editable_ppt.py
 ```
 
 Script resolution order:
 
 1. `<this-skill-dir>/scripts/run_editable_ppt.py`.
 2. `./scripts/run_editable_ppt.py`.
-3. `./commercial-ai-ppt/scripts/run_editable_ppt.py`.
-4. `$HERMES_HOME/skills/commercial-ai-ppt/scripts/run_editable_ppt.py`.
-5. `$CODEX_HOME/skills/commercial-ai-ppt/scripts/run_editable_ppt.py`.
-6. `~/.codex/skills/commercial-ai-ppt/scripts/run_editable_ppt.py`.
+3. `./ppt-helper/scripts/run_editable_ppt.py`.
+4. `$HERMES_HOME/skills/ppt-helper/scripts/run_editable_ppt.py`.
+5. `$CODEX_HOME/skills/ppt-helper/scripts/run_editable_ppt.py`.
+6. `~/.codex/skills/ppt-helper/scripts/run_editable_ppt.py`.
 
 If the script still cannot be found, stop and report the missing script path search. Do not create a simplified replacement and do not fall back to hand-written `python-pptx`.
 

@@ -1,33 +1,50 @@
-# Commercial AI PPT Skill
+# ppt-helper
 
-AI-facing skill for producing commercial PowerPoint decks from user-provided solution content, documents, images, or product materials.
+一个面向 AI agent 的 PPT 生成与重建 skill。它的目标不是只“出图”，而是帮助用户把素材整理成完整的 PPT 工作流：规划文案、生成或导入页面图、生成无字底图，并重建出可编辑的 `.pptx`。
 
-This repository is intentionally small. `SKILL.md` is the primary instruction file for AI agents. `references/` contains prompt templates that should be loaded only when needed. `scripts/` contains deterministic helpers for upload and editable PPT reconstruction.
+这个仓库保持轻量：
 
-## What This Skill Does
+- `SKILL.md` 是主入口，定义 agent 的行为规则。
+- `references/` 存放只在特定阶段按需加载的提示模板。
+- `scripts/` 存放稳定、可复用的脚本，用来做上传、OCR 预检和可编辑 PPT 重建。
 
-`commercial-ai-ppt` turns a long PPT production task into a continuous, auditable workflow:
+## 这个项目解决什么问题
 
-1. Plan the deck from the user's source material.
-2. Save the chapter structure and full slide copy.
-3. Generate text-overlaid slide images, or import slide images the user made elsewhere.
-4. Generate no-text slide backgrounds, or import clean backgrounds the user already has.
-5. Rebuild an editable `.pptx` with clean backgrounds plus editable text layers.
+`ppt-helper` 适合下面几类任务：
 
-The core design is: AI handles narrative, layout intent, and optional image generation; scripts handle repeatable file upload, OCR-assisted text extraction, layout reconstruction, and PPTX assembly.
+- 根据文档、产品资料、方案说明、截图和参考图，帮用户写一套 PPT。
+- 用户已经有页面图，只需要导入、补无字底图并重建可编辑 PPT。
+- 用户已经有带字页图和无字底图，只需要做重建。
+- 在不同机器、不同 Python 环境里，自动选择合适的 OCR 路径，而不是把运行时假设写死。
 
-## Continuous Production Contract
+它的核心理念是：
 
-This skill defaults to one production run:
+- 文案和页面意图交给 AI。
+- 文件落盘、OCR、重建、上传桥接交给脚本。
+- 阶段状态写进项目目录，而不是只靠聊天上下文记忆。
 
-- Plan content, save `source/approved_plan.md`, generate/import `ppt/` images, generate/import `ppt-clean/` backgrounds, and build the editable PPTX without stopping for default phase approvals.
-- Stop only when required inputs are missing, credentials/quota are unavailable, a tool/provider fails, or the user explicitly asks for staged review.
-- If staged review is requested, record the gate in `MANIFEST.md`; never rely on chat memory alone to resume production.
+## 默认工作流
 
-## Repository Layout
+默认是一次连续完成，而不是每个阶段都停下来等确认：
+
+1. 规划整套 PPT 的结构和逐页文案。
+2. 保存 `source/approved_plan.md`。
+3. 生成或导入带文字页面图到 `ppt/`。
+4. 生成或导入无字底图到 `ppt-clean/`。
+5. 运行重建脚本，输出 `ppt-editable/*.pptx`。
+6. 把关键信息写入 `MANIFEST.md`。
+
+只有在下面这些情况才应该暂停：
+
+- 输入素材不全。
+- 依赖、权限、额度或外部服务不可用。
+- 用户明确要求阶段式审查。
+- 本地文件没有真正落盘或校验失败。
+
+## 仓库结构
 
 ```text
-commercial-ai-ppt/
+ppt-helper/
   SKILL.md
   README.md
   references/
@@ -39,131 +56,88 @@ commercial-ai-ppt/
     build_editable_ppt_vision.py
 ```
 
-## How AI Agents Should Use It
+## 脚本说明
 
-When the user asks to create, generate, design, rebuild, import, or convert a commercial PPT, load `SKILL.md` first and follow it as the top-level controller. Choose the shortest valid entry mode when the user already has slide images.
+- `scripts/ocr_preflight.py`
+  用来检查当前运行时到底能不能做 OCR。它会探测 Python、平台、CPU 特征、PaddleOCR / RapidOCR 的真实导入能力，并给出推荐 backend。
 
-Only load `references/prompt-pack.md` when entering image generation or model-driven clean-background generation. Do not copy the full prompt pack into every turn unless the current phase needs a model prompt.
+- `scripts/run_editable_ppt.py`
+  是 Phase 3 的稳定入口。它会先做 preflight，再根据环境变量或命令行参数选择 OCR Python，最后调用真正的重建脚本。
 
-Use the bundled scripts instead of rewriting equivalent logic:
+- `scripts/build_editable_ppt_vision.py`
+  负责把 `ppt/` 与 `ppt-clean/` 重建成可编辑 PPT，并缓存 OCR JSON。
 
-- `scripts/ocr_preflight.py` checks whether the current runtime can actually run PaddleOCR or RapidOCR before Phase 3 starts.
-- `scripts/run_editable_ppt.py` is the stable reconstruction entrypoint. It runs preflight, honors OCR-runtime Python overrides, and then launches the actual builder.
-- `scripts/evolink_upload.py` uploads local reference images through Evolink Files and returns temporary model-facing URLs.
-- `scripts/build_editable_ppt_vision.py` rebuilds editable PowerPoint files from text-overlaid images and clean backgrounds after the runtime is known to be usable.
+- `scripts/evolink_upload.py`
+  在远程图像模型必须依赖公网 URL 时，把本地图片上传到 Evolink Files，返回可临时复用的 `file_url`。
 
-Never replace `run_editable_ppt.py` or `build_editable_ppt_vision.py` with an ad-hoc `python-pptx` fallback. If the scripts are not found, resolve the skill path or stop with a clear missing-script error.
+## OCR 与跨环境适配
 
-## Core Workflow
+这个项目不是把某一个 OCR 后端写死，而是按运行环境选择：
 
-Phase 1 is content planning. The AI reads the user's materials, extracts facts, drafts a slide-by-slide structure, writes the actual page copy, locks the deck language, and saves the working plan.
+- 能正常导入 PaddleOCR，就优先用 `paddleocr`。
+- PaddleOCR 不可用时，回退到 `rapidocr`。
+- 两者都不可用时，使用 `json` 模式，读取预先生成好的 OCR 结果。
 
-Phase 2 is slide image acquisition. The AI either generates slide images through the configured image model or imports user-supplied images made with GPT image tools, image2, Banana, Midjourney, designers, or other workflows. All accepted slide images are saved under `ppt/` and recorded in `MANIFEST.md`.
+这也是为什么项目提供独立 OCR Python 入口。主 agent Python 不一定就是最适合跑 OCR 的 Python。
 
-Phase 3 is editable reconstruction. The AI generates no-text backgrounds under `ppt-clean/`, or imports matching user-supplied clean backgrounds, then runs `run_editable_ppt.py` to create an editable PPTX under `ppt-editable/`.
-
-## Important Guardrails
-
-- Do not insert phase approvals unless the user explicitly asks for staged review.
-- Never ask whether generated Phase 2 images should be saved; save and validate them automatically.
-- Treat clean-background generation plus editable PPTX reconstruction as one Phase 3 workflow.
-- Never invent product facts, model names, customer claims, roadmap dates, or technical parameters.
-- Preserve the deck language. Chinese source content defaults to Simplified Chinese unless the user says otherwise.
-- Do not translate visible slide text into English just because the prompt template is written in English.
-- Treat user-supplied slide images as first-class inputs; do not force image generation when images already exist.
-- Use 16:9, 2K, medium quality, and `n=1` by default for image generation.
-- Never use 4K unless the user explicitly asks.
-- Never print, save, log, or commit API keys.
-- Do not require Evolink for local image import or reconstruction. Use Evolink Files only when a remote image model needs temporary model-facing URLs.
-- Treat remote image result URLs as temporary. Download generated slides to local `ppt/` immediately and use local files as the Phase 3 source of truth.
-- Persist usable remote URL metadata in `remote_assets.json` and `MANIFEST.md`; Phase 3 should reuse Phase 2 generated image URLs while they are unexpired and validated, then refresh them from local files only when needed.
-- Do not upload generated `ppt/` images before checking cached Phase 2 URLs. Missing Evolink upload credentials are not a blocker when valid generated result URLs already exist.
-- Use failure-aware downloads and image validation; unchecked `curl -sL` / `curl -s -o` is not enough because 404/403 responses must stop the workflow. For Evolink result URLs, use `curl -fL --retry 3 --retry-delay 2 --connect-timeout 15 --max-time 180 -A "Mozilla/5.0" ...` or equivalent checked code.
-- Always report resolved absolute output paths. Do not only say `~/Desktop/...`, `./ppt-projects/...`, `/ppt`, or `/ppt-clean`, because those paths may refer to the runtime workspace rather than the user's physical desktop.
-- Do not claim that files were checked, generated, or executed unless actual tool calls produced or verified them.
-- Keep generated project outputs outside this repository unless the user explicitly asks to commit examples.
-
-## Expected Runtime Inputs
-
-The skill does not include API keys. Runtime credentials should be provided by the host environment, profile, or secret manager.
-
-Common optional environment variables:
+可选环境变量：
 
 ```text
-EVOLINK_API_KEY
-EVOLINK_API_TOKEN
-COMMERCIAL_PPT_OUTPUT_ROOT
-AI_PPT_OUTPUT_ROOT
-PPT_OUTPUT_ROOT
-COMMERCIAL_PPT_PUBLIC_BASE_URL
-AI_PPT_PUBLIC_BASE_URL
-PPT_PUBLIC_BASE_URL
 COMMERCIAL_PPT_OCR_PYTHON
 AI_PPT_OCR_PYTHON
 PPT_OCR_PYTHON
 OCR_RUNTIME_PYTHON
 ```
 
-If an image provider key, upload key, quota, or model access is missing, stop and tell the user what is missing instead of silently switching providers.
+例如：
 
-No image-provider credential is required when the user supplies both text-overlaid slide images and matching clean no-text backgrounds for local reconstruction.
+```bash
+export COMMERCIAL_PPT_OCR_PYTHON=/absolute/path/to/ocr-runtime/bin/python
+```
 
-For Phase 3 reconstruction, run preflight first:
+然后通过统一入口运行：
+
+```bash
+python scripts/run_editable_ppt.py --base /path/to/project --output demo_editable.pptx
+```
+
+先做运行前检查：
 
 ```bash
 python scripts/ocr_preflight.py
 python scripts/ocr_preflight.py --json --require-ready
 ```
 
-For a split-runtime deployment, point the reconstruction entrypoint at a dedicated OCR interpreter:
+## 兼容矩阵
 
-```bash
-export COMMERCIAL_PPT_OCR_PYTHON=/absolute/path/to/ocr-runtime/bin/python
-```
-
-Install the OCR/PPT stack into that interpreter when needed:
-
-```bash
-python -m pip install python-pptx pillow paddlepaddle paddleocr opencv-python-headless
-# fallback:
-python -m pip install python-pptx pillow rapidocr_onnxruntime opencv-python-headless
-```
-
-Use the stable launcher for reconstruction:
-
-```bash
-python scripts/run_editable_ppt.py --base /path/to/project --output demo_editable.pptx
-```
-
-The reconstruction script can also use precomputed OCR JSON via `--ocr-backend json --ocr-json-dir <dir>` when a runtime cannot install OCR dependencies.
-
-## Compatibility Notes
-
-- The skill is designed to stay portable across macOS, Linux, Windows, local workspaces, containers, and SSH hosts.
-- OCR backend choice is runtime-dependent, not repository-dependent. A machine that can import PaddleOCR should use it; a machine that cannot should fall back to RapidOCR; a machine that cannot run either should use precomputed JSON.
-- PaddleOCR compatibility depends on more than `pip install`. Real usability depends on the Python version, platform wheel availability, and CPU features exposed by the host or VM.
-- The repository should be treated as compatible with multiple OCR backends and multiple Python runtimes. Do not assume the Hermes main interpreter is always the right OCR interpreter.
-
-## Compatibility Matrix
-
-| Environment | Recommended OCR | Notes |
+| 环境 | 推荐 OCR | 说明 |
 | --- | --- | --- |
-| macOS local workstation | `paddleocr` when importable, else `rapidocr` | Good default for creator workflows. Use a separate OCR Python if the main agent Python lacks OCR wheels. |
-| Linux server with AVX and supported Paddle wheel | `paddleocr` | Best quality path for CPU-only deployments when the host can actually import Paddle. |
-| Linux server without AVX or with incompatible Paddle wheel | `rapidocr` | Most portable server fallback. This is common in VMs and constrained cloud instances. |
-| Windows workstation/server | `paddleocr` when importable, else `rapidocr` | Keep OCR runtime separate from the main agent Python when wheel availability differs. |
-| Any host with no working OCR runtime | `json` | Use precomputed OCR JSON and skip live OCR entirely. |
+| macOS 本地开发机 | `paddleocr`，不可用时回退 `rapidocr` | 适合内容生产与调试。 |
+| Linux 服务器，CPU 支持 AVX，且 Paddle wheel 可用 | `paddleocr` | 质量优先的 CPU 路径。 |
+| Linux 服务器，无 AVX 或 Paddle wheel 不兼容 | `rapidocr` | 更稳妥、更常见的服务器回退路径。 |
+| Windows 本地或服务器 | `paddleocr`，不可用时回退 `rapidocr` | 建议把 OCR Python 与主运行时分开。 |
+| 没有可用 OCR 运行时的任意环境 | `json` | 使用预先生成的 OCR JSON。 |
 
-`run_editable_ppt.py` writes an `OCR Runtime` section into `MANIFEST.md`, so every output folder records which Python and which backend were actually used.
+`run_editable_ppt.py` 会把当前运行时的判断写进 `MANIFEST.md` 的 `OCR Runtime` 区块，包括：
 
-## Output Contract
+- 实际使用的 Python
+- 请求的 backend
+- 推荐的 backend
+- 最终采用的 backend
+- probe 结果
+- blocker 信息
 
-A completed run should produce a project folder like:
+这样每一个输出目录都能解释自己“为什么这样跑”。
+
+## 输出约定
+
+一次完整执行通常会得到这样的目录：
 
 ```text
 <project>/
-  source/approved_plan.md
-  source/imported_assets.md
+  source/
+    approved_plan.md
+    imported_assets.md
   ppt/
   ppt-clean/
   ppt-editable/
@@ -173,10 +147,22 @@ A completed run should produce a project folder like:
   MANIFEST.md
 ```
 
-`MANIFEST.md` and the final response should include resolved absolute paths for the project directory, generated image folders, final PPTX path, validation status, any known limitations, and the OCR runtime section written by `run_editable_ppt.py`.
+`MANIFEST.md` 应至少记录：
 
-If a deployment sets a public base URL environment variable, the agent should report both the filesystem path and the public URL. The repository does not hardcode server-specific hostnames or nginx paths.
+- 项目目录绝对路径
+- `ppt/`、`ppt-clean/`、`ppt-editable/` 绝对路径
+- 图像来源与远程 URL 映射
+- 最终 `.pptx` 路径
+- OCR Runtime 信息
+- 已知限制和异常页
+
+## 运行时注意事项
+
+- 不要把 `ppt-helper` 当成只会出图的 prompt，它本质上是一个“写稿 + 文件落盘 + 重建”的 workflow skill。
+- 不要在没有真实工具输出和本地文件的情况下声称“已生成”“已执行”“已验证”。
+- 不要在 Phase 2 和 Phase 3 之间重复上传已经有可用 `file_url` 的图片。
+- 不要把机器私有路径、单一操作系统假设、某个团队的部署方式写进开源默认逻辑。
 
 ## License
 
-MIT License. See [LICENSE](LICENSE).
+MIT，见 [LICENSE](LICENSE)。

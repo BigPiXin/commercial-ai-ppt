@@ -1,6 +1,6 @@
 # Prompt Pack
 
-Use this file only when entering Phase 2 or Phase 3 of `commercial-ai-ppt` and a model call is actually needed. Do not load this file for pure local image import or reconstruction from already-supplied slide images/backgrounds.
+Use this file only when entering Phase 2 or Phase 3 of `ppt-helper` and a model call is actually needed. Do not load this file for pure local image import or reconstruction from already-supplied slide images/backgrounds.
 
 ## Reference URL Handling
 
@@ -17,7 +17,7 @@ When Phase 3 needs `image_urls` for clean-background generation, do not upload `
 Create one prompt per slide. Keep product facts and page copy exactly aligned with `source/approved_plan.md`.
 
 ```text
-Create a premium 16:9 commercial PowerPoint slide image for an enterprise solution presentation.
+Create a premium 16:9 PowerPoint slide image for an enterprise presentation.
 
 Deck language:
 {deck_language}

@@ -36,7 +36,7 @@ def request_json(endpoint: str, token: str, payload: dict) -> dict:
         headers={
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
-            "User-Agent": "commercial-ai-ppt/1.0",
+            "User-Agent": "ppt-helper/1.0",
         },
         method="POST",
     )
@@ -61,7 +61,7 @@ def upload_local_base64(path: Path, token: str, upload_path: str | None) -> dict
 
 
 def request_multipart(endpoint: str, token: str, fields: dict[str, str | None], file_field: str, path: Path) -> dict:
-    boundary = f"----commercial-ai-ppt-{int(time.time() * 1000)}"
+    boundary = f"----ppt-helper-{int(time.time() * 1000)}"
     mime_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
     chunks: list[bytes] = []
     for name, value in fields.items():
@@ -90,7 +90,7 @@ def request_multipart(endpoint: str, token: str, fields: dict[str, str | None], 
         headers={
             "Authorization": f"Bearer {token}",
             "Content-Type": f"multipart/form-data; boundary={boundary}",
-            "User-Agent": "commercial-ai-ppt/1.0",
+            "User-Agent": "ppt-helper/1.0",
         },
         method="POST",
     )
