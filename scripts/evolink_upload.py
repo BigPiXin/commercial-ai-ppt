@@ -2,8 +2,8 @@
 """Upload local images or remote URLs to Evolink Files and emit public file URLs.
 
 The script uses only Python standard library modules. Local files are uploaded
-through the Base64 endpoint to avoid multipart dependency differences across
-Windows, macOS, Linux, and constrained agent environments.
+through the stream endpoint first, then retried through Base64 if the provider
+edge rejects multipart upload in a constrained runtime.
 """
 from __future__ import annotations
 
@@ -36,6 +36,7 @@ def request_json(endpoint: str, token: str, payload: dict) -> dict:
         headers={
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
+            "User-Agent": "commercial-ai-ppt/1.0",
         },
         method="POST",
     )
@@ -57,6 +58,53 @@ def upload_local_base64(path: Path, token: str, upload_path: str | None) -> dict
     if upload_path:
         payload["upload_path"] = upload_path
     return request_json(f"{FILES_API_BASE}/base64", token, payload)
+
+
+def request_multipart(endpoint: str, token: str, fields: dict[str, str | None], file_field: str, path: Path) -> dict:
+    boundary = f"----commercial-ai-ppt-{int(time.time() * 1000)}"
+    mime_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    chunks: list[bytes] = []
+    for name, value in fields.items():
+        if value is None:
+            continue
+        chunks.extend([
+            f"--{boundary}\r\n".encode("utf-8"),
+            f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("utf-8"),
+            str(value).encode("utf-8"),
+            b"\r\n",
+        ])
+    chunks.extend([
+        f"--{boundary}\r\n".encode("utf-8"),
+        (
+            f'Content-Disposition: form-data; name="{file_field}"; '
+            f'filename="{path.name}"\r\n'
+        ).encode("utf-8"),
+        f"Content-Type: {mime_type}\r\n\r\n".encode("utf-8"),
+        path.read_bytes(),
+        b"\r\n",
+        f"--{boundary}--\r\n".encode("utf-8"),
+    ])
+    req = urllib.request.Request(
+        endpoint,
+        data=b"".join(chunks),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "User-Agent": "commercial-ai-ppt/1.0",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Evolink stream upload failed: HTTP {exc.code}: {body}") from exc
+
+
+def upload_local_stream(path: Path, token: str, upload_path: str | None) -> dict:
+    fields = {"file_name": path.name, "upload_path": upload_path}
+    return request_multipart(f"{FILES_API_BASE}/stream", token, fields, "file", path)
 
 
 def upload_remote_url(url: str, token: str, upload_path: str | None, file_name: str | None) -> dict:
@@ -105,7 +153,11 @@ def main() -> int:
             path = Path(item).expanduser().resolve()
             if not path.exists():
                 raise FileNotFoundError(path)
-            result = upload_local_base64(path, token, args.upload_path)
+            try:
+                result = upload_local_stream(path, token, args.upload_path)
+            except RuntimeError as exc:
+                print(f"Stream upload failed, retrying Base64 upload: {exc}", file=sys.stderr, flush=True)
+                result = upload_local_base64(path, token, args.upload_path)
         record = normalize_result(item, result)
         records.append(record)
         print(record["file_url"], flush=True)
@@ -121,4 +173,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

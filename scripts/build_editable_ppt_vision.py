@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Low-memory OCR -> editable PPTX builder.
+"""OCR -> editable PPTX builder.
 
-This avoids PaddleOCR's large resident memory footprint by running OCR one image
-at a time, caching each page as JSON, and then rebuilding only editable text
-layers over the clean slide backgrounds.
+The script runs OCR one image at a time, caches each page as JSON, and then
+rebuilds editable text layers over the clean slide backgrounds.
 """
 from __future__ import annotations
 
@@ -12,9 +11,9 @@ import importlib.util
 import json
 import os
 import platform
-import shutil
-import subprocess
 import statistics
+import subprocess
+import sys
 from pathlib import Path
 
 from PIL import Image
@@ -380,18 +379,40 @@ def module_exists(name: str) -> bool:
     return importlib.util.find_spec(name) is not None
 
 
-def can_run_apple_vision(swift_ocr: Path, vision_ocr_bin: Path) -> bool:
-    return platform.system() == "Darwin" and (
-        vision_ocr_bin.exists() or (swift_ocr.exists() and shutil.which("swift"))
-    )
+def probe_import(command: str) -> tuple[bool, str]:
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", command],
+            capture_output=True,
+            text=True,
+            timeout=45,
+            check=False,
+        )
+    except Exception as exc:
+        return (False, str(exc))
+    detail = (proc.stdout or proc.stderr or "").strip()
+    return (proc.returncode == 0, detail)
+
+
+def can_run_paddleocr() -> bool:
+    if not (module_exists("paddleocr") and module_exists("paddle")):
+        return False
+    ok, _detail = probe_import("import paddle, paddleocr; print(paddle.__version__)")
+    return ok
 
 
 def can_run_rapidocr() -> bool:
-    return module_exists("rapidocr") or module_exists("rapidocr_onnxruntime")
-
-
-def can_run_tesseract() -> bool:
-    return module_exists("pytesseract") and shutil.which("tesseract") is not None
+    if not (module_exists("rapidocr") or module_exists("rapidocr_onnxruntime")):
+        return False
+    ok, _detail = probe_import(
+        "from PIL import Image\n"
+        "import cv2\n"
+        "try:\n"
+        "    from rapidocr import RapidOCR\n"
+        "except ImportError:\n"
+        "    from rapidocr_onnxruntime import RapidOCR"
+    )
+    return ok
 
 
 def apply_low_memory_runtime_defaults() -> None:
@@ -405,18 +426,17 @@ def apply_low_memory_runtime_defaults() -> None:
         pass
 
 
-def choose_ocr_backend(requested: str, swift_ocr: Path, vision_ocr_bin: Path) -> str:
+def choose_ocr_backend(requested: str) -> str:
     if requested != "auto":
         return requested
-    if can_run_apple_vision(swift_ocr, vision_ocr_bin):
-        return "apple-vision"
+    if can_run_paddleocr():
+        return "paddleocr"
     if can_run_rapidocr():
         return "rapidocr"
-    if can_run_tesseract():
-        return "tesseract"
     raise RuntimeError(
-        "No OCR backend is available. On Windows/Linux install a low-memory backend, "
-        "for example: pip install rapidocr_onnxruntime opencv-python-headless"
+        "No OCR backend is available. Install PaddleOCR or RapidOCR, for example: "
+        "pip install paddlepaddle paddleocr opencv-python-headless "
+        "or pip install rapidocr_onnxruntime opencv-python-headless"
     )
 
 
@@ -451,12 +471,76 @@ def normalize_regions(image_path: Path, width: float, height: float, rows: list)
     return {"image": str(image_path), "width": width, "height": height, "regions": regions}
 
 
-def run_apple_vision_ocr(image_path: Path, out_json: Path, swift_ocr: Path, vision_ocr_bin: Path) -> dict:
-    cmd = [str(vision_ocr_bin), str(image_path), str(out_json)]
-    if not vision_ocr_bin.exists():
-        cmd = ["swift", str(swift_ocr), str(image_path), str(out_json)]
-    subprocess.run(cmd, check=True)
-    return json.loads(out_json.read_text(encoding="utf-8"))
+def paddle_result_rows(raw) -> list:
+    if raw is None:
+        return []
+    if hasattr(raw, "to_json"):
+        raw = raw.to_json()
+    if isinstance(raw, str):
+        raw = json.loads(raw)
+    if isinstance(raw, dict):
+        texts = raw.get("rec_texts") or raw.get("texts") or []
+        scores = raw.get("rec_scores") or raw.get("scores") or [0.0] * len(texts)
+        boxes = (
+            raw.get("rec_polys")
+            or raw.get("dt_polys")
+            or raw.get("rec_boxes")
+            or raw.get("boxes")
+            or []
+        )
+        if texts and boxes:
+            return list(zip(boxes, texts, scores))
+        for key in ("results", "regions", "res"):
+            if key in raw:
+                return paddle_result_rows(raw[key])
+        return []
+    if isinstance(raw, (list, tuple)) and len(raw) == 1:
+        return paddle_result_rows(raw[0])
+    rows = []
+    if isinstance(raw, (list, tuple)):
+        for item in raw:
+            if isinstance(item, dict):
+                rows.extend(paddle_result_rows(item))
+            elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                if len(item) >= 3:
+                    rows.append(item)
+                elif isinstance(item[1], (list, tuple)) and len(item[1]) >= 2:
+                    rows.append((item[0], item[1][0], item[1][1]))
+                else:
+                    rows.extend(paddle_result_rows(item))
+    return rows
+
+
+def run_paddleocr(image_path: Path, width: float, height: float) -> dict:
+    apply_low_memory_runtime_defaults()
+    from paddleocr import PaddleOCR
+
+    init_attempts = [
+        {"lang": "ch", "use_angle_cls": True, "show_log": False, "use_gpu": False},
+        {"lang": "ch", "use_textline_orientation": True},
+        {"lang": "ch"},
+    ]
+    last_error = None
+    engine = None
+    for kwargs in init_attempts:
+        try:
+            engine = PaddleOCR(**kwargs)
+            break
+        except TypeError as exc:
+            last_error = exc
+    if engine is None:
+        raise RuntimeError(f"Failed to initialize PaddleOCR: {last_error}")
+
+    if hasattr(engine, "ocr"):
+        try:
+            raw = engine.ocr(str(image_path), cls=True)
+        except TypeError:
+            raw = engine.ocr(str(image_path))
+    elif hasattr(engine, "predict"):
+        raw = engine.predict(str(image_path))
+    else:
+        raise RuntimeError("Unsupported PaddleOCR API: missing ocr() or predict()")
+    return normalize_regions(image_path, width, height, paddle_result_rows(raw))
 
 
 def run_rapidocr(image_path: Path, width: float, height: float) -> dict:
@@ -487,39 +571,10 @@ def run_rapidocr(image_path: Path, width: float, height: float) -> dict:
     return normalize_regions(image_path, width, height, rows)
 
 
-def run_tesseract(image_path: Path, width: float, height: float) -> dict:
-    import pytesseract
-    from pytesseract import Output
-
-    data = pytesseract.image_to_data(
-        Image.open(image_path),
-        lang="chi_sim+eng",
-        output_type=Output.DICT,
-        config="--psm 6",
-    )
-    rows = []
-    for i, text in enumerate(data.get("text", [])):
-        text = str(text).strip()
-        try:
-            confidence = float(data["conf"][i])
-        except (ValueError, TypeError):
-            confidence = -1.0
-        if not text or confidence < 30:
-            continue
-        x = float(data["left"][i])
-        y = float(data["top"][i])
-        w = float(data["width"][i])
-        h = float(data["height"][i])
-        rows.append({"text": text, "confidence": confidence / 100.0, "bbox": [x, y, x + w, y + h]})
-    return normalize_regions(image_path, width, height, rows)
-
-
 def run_ocr(
     image_path: Path,
     out_dir: Path,
     backend: str,
-    swift_ocr: Path,
-    vision_ocr_bin: Path,
     ocr_json_dir: Path | None,
 ) -> dict:
     image = Image.open(image_path)
@@ -527,11 +582,6 @@ def run_ocr(
     image.close()
 
     cache_dir = out_dir / "ocr" / backend
-    if backend == "apple-vision":
-        legacy_cache = out_dir / "vision_ocr" / f"{image_path.stem}.json"
-        if legacy_cache.exists():
-            print(f"Using cached OCR {legacy_cache.name}", flush=True)
-            return json.loads(legacy_cache.read_text(encoding="utf-8"))
     if backend == "json":
         if ocr_json_dir is None:
             raise RuntimeError("--ocr-json-dir is required when --ocr-backend=json")
@@ -546,12 +596,10 @@ def run_ocr(
         raise FileNotFoundError(f"Missing precomputed OCR JSON: {out_json}")
 
     print(f"OCR {image_path.name} via {backend}", flush=True)
-    if backend == "apple-vision":
-        result = run_apple_vision_ocr(image_path, out_json, swift_ocr, vision_ocr_bin)
+    if backend == "paddleocr":
+        result = run_paddleocr(image_path, width, height)
     elif backend == "rapidocr":
         result = run_rapidocr(image_path, width, height)
-    elif backend == "tesseract":
-        result = run_tesseract(image_path, width, height)
     else:
         raise RuntimeError(f"Unsupported OCR backend: {backend}")
 
@@ -571,11 +619,9 @@ def build(
     ppt_dir = base / "ppt"
     clean_dir = base / "ppt-clean"
     out_dir = base / "ppt-editable"
-    swift_ocr = SCRIPT_DIR / "vision_ocr.swift"
-    vision_ocr_bin = SCRIPT_DIR / "vision_ocr"
     out_pptx = out_dir / output_name
     text_layers = out_dir / f"{Path(output_name).stem}_text_layers.json"
-    backend = choose_ocr_backend(ocr_backend, swift_ocr, vision_ocr_bin)
+    backend = choose_ocr_backend(ocr_backend)
     font_name = font_name or default_font_name()
     style_overrides = load_style_overrides(style_overrides_path)
 
@@ -600,7 +646,7 @@ def build(
         image_w, image_h = orig.size
         if clean.size != orig.size:
             raise ValueError(f"Image size mismatch: {image_path.name} {orig.size} vs {clean_path.name} {clean.size}")
-        ocr = run_ocr(image_path, out_dir, backend, swift_ocr, vision_ocr_bin, ocr_json_dir)
+        ocr = run_ocr(image_path, out_dir, backend, ocr_json_dir)
         slide = prs.slides.add_slide(blank)
         slide.shapes.add_picture(
             str(clean_path),
@@ -685,12 +731,12 @@ def build(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Build editable PPT from ppt/*.png + ppt-clean/*_clean.png")
     parser.add_argument("--base", default=".", help="Project directory containing ppt/ and ppt-clean/")
-    parser.add_argument("--output", default="editable_vision_gradient.pptx", help="Output pptx filename")
+    parser.add_argument("--output", default="editable_ocr_gradient.pptx", help="Output pptx filename")
     parser.add_argument(
         "--ocr-backend",
         default="auto",
-        choices=("auto", "apple-vision", "rapidocr", "tesseract", "json"),
-        help="OCR backend. auto prefers Apple Vision on macOS, then RapidOCR, then Tesseract.",
+        choices=("auto", "paddleocr", "rapidocr", "json"),
+        help="OCR backend. auto prefers PaddleOCR, then RapidOCR.",
     )
     parser.add_argument("--ocr-json-dir", default=None, help="Directory of precomputed OCR JSON files for --ocr-backend=json")
     parser.add_argument("--font", default=None, help="PPT font name, e.g. PingFang SC or Microsoft YaHei")

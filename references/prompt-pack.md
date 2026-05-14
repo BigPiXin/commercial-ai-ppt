@@ -2,6 +2,16 @@
 
 Use this file only when entering Phase 2 or Phase 3 of `commercial-ai-ppt` and a model call is actually needed. Do not load this file for pure local image import or reconstruction from already-supplied slide images/backgrounds.
 
+## Reference URL Handling
+
+When Phase 3 needs `image_urls` for clean-background generation, do not upload `/ppt` images first by default. Treat the Phase 2 image-generation result URL as the connected transport handle for the same slide:
+
+- Read `remote_assets.json` and match each local `/ppt` image by page number and local path.
+- Prefer the recorded Phase 2 `file_url`, then `download_url`, when it is unexpired and still validates as an image.
+- Pass the validated cached URL directly as the clean-background request's `image_urls` value.
+- Upload the local `/ppt` image only when the cached URL is missing, expired, mismatched, inaccessible, or invalid.
+- Missing Evolink upload credentials are not a blocker when valid Phase 2 result URLs already exist.
+
 ## Phase 2 Image Generation Prompt Template
 
 Create one prompt per slide. Keep product facts and page copy exactly aligned with `source/approved_plan.md`.
