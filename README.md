@@ -8,7 +8,7 @@
 - `references/` 存放只在特定阶段按需加载的提示模板。
 - `scripts/` 存放稳定、可复用的脚本，用来做上传、OCR 预检和可编辑 PPT 重建。
 
-推荐使用配置：Hermes + LLM + 任意可调用的图片生成服务 + PaddleOCR/RapidOCR。
+推荐使用配置：Hermes + LLM + image2 + PaddleOCR/RapidOCR。
 
 ## 解决什么问题
 
